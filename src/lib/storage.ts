@@ -1,6 +1,7 @@
 import type { AuthUser, PersistedAppState } from '../types/app'
 
 export const storageKey = 'carlink-p2p-marketplace-state'
+const sessionKey = 'carlink-p2p-marketplace-session'
 const apiBase = import.meta.env.VITE_API_URL ?? ''
 
 export function loadPersistedState(): PersistedAppState | null {
@@ -54,13 +55,14 @@ export async function clearRemoteState() {
 }
 
 export async function loadSession(): Promise<AuthUser | null> {
+  const localUser = loadLocalSession()
   try {
     const response = await fetch(`${apiBase}/api/auth/session`, { credentials: 'include' })
-    if (!response.ok) return null
+    if (!response.ok) return localUser
     const payload = (await response.json()) as { user?: AuthUser | null }
-    return payload.user ?? null
+    return payload.user ?? localUser
   } catch {
-    return null
+    return localUser
   }
 }
 
@@ -72,15 +74,19 @@ export async function loginUser(payload: { name: string; phone: string; role: Au
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    if (!response.ok) return null
+    if (!response.ok) return createLocalSession(payload)
     const result = (await response.json()) as { user?: AuthUser }
-    return result.user ?? null
+    if (result.user) {
+      saveLocalSession(result.user)
+    }
+    return result.user ?? createLocalSession(payload)
   } catch {
-    return null
+    return createLocalSession(payload)
   }
 }
 
 export async function logoutUser() {
+  clearLocalSession()
   try {
     await fetch(`${apiBase}/api/auth/logout`, {
       method: 'POST',
@@ -89,4 +95,37 @@ export async function logoutUser() {
   } catch {
     // Session will be treated as logged out locally.
   }
+}
+
+function loadLocalSession(): AuthUser | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(sessionKey)
+    return raw ? (JSON.parse(raw) as AuthUser) : null
+  } catch {
+    return null
+  }
+}
+
+function saveLocalSession(user: AuthUser) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(sessionKey, JSON.stringify(user))
+}
+
+function clearLocalSession() {
+  if (typeof window === 'undefined') return
+  window.localStorage.removeItem(sessionKey)
+}
+
+function createLocalSession(payload: { name: string; phone: string; role: AuthUser['role'] }) {
+  const user: AuthUser = {
+    id: `local-${Date.now()}`,
+    name: payload.name.trim() || '出品者',
+    phone: payload.phone.trim(),
+    role: payload.role,
+    verified: false,
+    createdAt: new Date().toISOString(),
+  }
+  saveLocalSession(user)
+  return user
 }
