@@ -1,0 +1,21 @@
+{
+  "name": "CarLink",
+  "short_name": "CarLink",
+  "description": "車検証と写真から簡単に出品できる、個人間中古車売買アプリ。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f8",
+  "theme_color": "#0f766e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "business", "utilities"],
+  "lang": "ja"
+}
