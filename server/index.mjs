@@ -14,6 +14,7 @@ const sessionsFile = join(dataDir, 'sessions.json')
 const distDir = join(rootDir, 'dist')
 const port = Number(process.env.PORT ?? 8787)
 const isHttps = Boolean(process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH)
+const hasManagedTls = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL)
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -242,7 +243,7 @@ async function getReadiness() {
   checks.push({
     key: 'https',
     label: 'HTTPS ready',
-    ok: isHttps || process.env.NODE_ENV !== 'production',
+    ok: isHttps || hasManagedTls || process.env.NODE_ENV !== 'production',
   })
   checks.push({
     key: 'ocr',
@@ -410,7 +411,7 @@ const requestHandler = async (request, response) => {
       const sessions = await readCollection(sessionsFile, {})
       sessions[sid] = user.id
       await writeCollection(sessionsFile, sessions)
-      const secureCookie = isHttps ? '; Secure' : ''
+      const secureCookie = isHttps || hasManagedTls ? '; Secure' : ''
       sendJsonWithCookie(
         response,
         200,
