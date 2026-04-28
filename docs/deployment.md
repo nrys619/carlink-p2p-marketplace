@@ -62,6 +62,7 @@ The frontend uses Web NFC when available. Web NFC support is limited, mainly And
    - Build command: `npm ci && npm run check`
    - Start command: `node server/index.mjs`
    - Health check path: `/api/health`
+   - Instance type: Free
 4. Add `OPENAI_API_KEY` and `CORS_ORIGIN` in Render environment variables.
 
 ## Railway quick start
