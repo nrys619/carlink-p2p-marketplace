@@ -3,7 +3,7 @@ services:
     name: carlink-p2p-marketplace
     env: node
     plan: free
-    buildCommand: npm ci && npm run check
+    buildCommand: npm ci --include=dev && npm run check
     startCommand: node server/index.mjs
     healthCheckPath: /api/health
     envVars:

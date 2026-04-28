@@ -63,6 +63,7 @@ npm run check
 API保存、ログイン、OCR連携まで同じURLで動かすなら、まずは Render / Railway / Fly.io などのNodeサーバー対応ホスティングがおすすめです。静的表示だけならVercelまたはNetlifyにもデプロイできます。
 
 - Build command: `npm run build`
+- Render build command: `npm ci --include=dev && npm run check`
 - Start command: `node server/index.mjs`
 - Health check: `/api/health`
 - Docker: `Dockerfile`
