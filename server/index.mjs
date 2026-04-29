@@ -43,7 +43,7 @@ async function readJsonBody(request) {
   let body = ''
   for await (const chunk of request) {
     body += chunk
-    if (body.length > 12_000_000) {
+    if (body.length > 30_000_000) {
       throw new Error('Request body is too large')
     }
   }

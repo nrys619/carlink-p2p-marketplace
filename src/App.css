@@ -660,7 +660,8 @@
 }
 
 .scan-result input,
-.price-editor input {
+.price-editor input,
+.price-editor textarea {
   width: 100%;
   border: 0;
   outline: 0;
@@ -669,6 +670,12 @@
   font: inherit;
   font-size: 15px;
   font-weight: 900;
+}
+
+.price-editor textarea {
+  min-height: 86px;
+  resize: vertical;
+  line-height: 1.55;
 }
 
 .photo-step {
@@ -699,6 +706,16 @@
   font-weight: 900;
 }
 
+.photo-message {
+  margin: 0 !important;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #0f5f59 !important;
+  background: #e9f7f4;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .photo-capture-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -715,6 +732,11 @@
   background: #172036;
   color: #ffffff;
   font-weight: 900;
+}
+
+.photo-slot:not(.has-image) img {
+  filter: grayscale(0.25);
+  opacity: 0.25;
 }
 
 .photo-slot img {
@@ -751,6 +773,7 @@
 
 .price-editor {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-content: center;
 }
@@ -759,7 +782,12 @@
   min-height: 86px;
 }
 
-.price-editor input {
+.price-editor label.wide,
+.price-presets {
+  grid-column: 1 / -1;
+}
+
+.price-editor label:first-child input {
   color: #b42318;
   font-size: 26px;
 }

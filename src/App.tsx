@@ -186,10 +186,53 @@ const normalizeSavedSearches = (value: unknown): SavedSearch[] => {
     }))
 }
 
+const emptyPhotoImages = () => photoSlots.map(() => '')
+
+const inferMaker = (title: string) => {
+  const normalizedTitle = title.trim()
+  return catalogMakers.find((maker) => normalizedTitle.includes(maker.name))?.name ?? 'その他'
+}
+
+const inferYear = (value: string) => {
+  const westernYear = value.match(/20\d{2}/)?.[0]
+  if (westernYear) return `${westernYear}年`
+  const reiwaYear = value.match(/令和\s*(\d+)/)?.[1]
+  if (reiwaYear) return `${2018 + Number(reiwaYear)}年`
+  const heiseiYear = value.match(/平成\s*(\d+)/)?.[1]
+  if (heiseiYear) return `${1988 + Number(heiseiYear)}年`
+  return '年式未入力'
+}
+
+const compressImageFile = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.addEventListener('error', () => reject(new Error('画像を読み込めませんでした')))
+    reader.addEventListener('load', () => {
+      const image = new Image()
+      image.addEventListener('error', () => reject(new Error('画像を処理できませんでした')))
+      image.addEventListener('load', () => {
+        const maxSize = 1400
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.width * scale))
+        canvas.height = Math.max(1, Math.round(image.height * scale))
+        const context = canvas.getContext('2d')
+        if (!context) {
+          reject(new Error('画像処理を開始できませんでした'))
+          return
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.82))
+      })
+      image.src = String(reader.result)
+    })
+    reader.readAsDataURL(file)
+  })
+
 function App() {
   const savedState = useMemo(() => loadPersistedState(), [])
   const [activeView, setActiveView] = useState<AppView>(() => viewFromHash())
-  const [vehicles, setVehicles] = useState(savedState?.vehicles ?? baseVehicles)
+  const [vehicles, setVehicles] = useState(savedState?.vehicles ?? [])
   const [selectedId, setSelectedId] = useState(1)
   const [listingStep, setListingStep] = useState(0)
   const [analysisDone, setAnalysisDone] = useState(savedState?.analysisDone ?? false)
@@ -221,13 +264,14 @@ function App() {
   const [serverSynced, setServerSynced] = useState(false)
   const [readiness, setReadiness] = useState<ReadinessStatus | null>(null)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
-  const [loginName, setLoginName] = useState('テスト出品者')
-  const [loginPhone, setLoginPhone] = useState('09000000000')
+  const [loginName, setLoginName] = useState('')
+  const [loginPhone, setLoginPhone] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [nfcReading, setNfcReading] = useState(false)
+  const [photoMessage, setPhotoMessage] = useState('')
   const [chatMessages, setChatMessages] = useState(savedState?.chatMessages ?? initialChat)
   const [compareIds, setCompareIds] = useState<number[]>(savedState?.compareIds ?? [])
-  const [favorites, setFavorites] = useState(savedState?.favorites ?? [1])
+  const [favorites, setFavorites] = useState(savedState?.favorites ?? [])
   const [inspectionChecks, setInspectionChecks] = useState<string[]>(savedState?.inspectionChecks ?? [])
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() =>
     normalizeSavedSearches(savedState?.savedSearches),
@@ -238,11 +282,13 @@ function App() {
     ...(savedState?.selectedOptions ?? ['サンルーフ', 'ETC', 'アダプティブクルーズ']),
   ])
   const [draftPrice, setDraftPrice] = useState(savedState?.draftPrice ?? 3180000)
+  const [draftLocation, setDraftLocation] = useState(savedState?.draftLocation ?? '')
+  const [draftDescription, setDraftDescription] = useState(savedState?.draftDescription ?? '')
   const [draftFields, setDraftFields] = useState<Record<string, string>>(
     savedState?.draftFields ?? Object.fromEntries(scannedFields),
   )
   const [photoImages, setPhotoImages] = useState<string[]>(
-    savedState?.photoImages ?? photoSlots.map((slot) => slot.image),
+    savedState?.photoImages ?? emptyPhotoImages(),
   )
 
   useEffect(() => {
@@ -262,6 +308,8 @@ function App() {
         setSavedSearches(normalizeSavedSearches(remoteState.savedSearches))
         setSelectedOptions(remoteState.selectedOptions)
         setDraftPrice(remoteState.draftPrice)
+        setDraftLocation(remoteState.draftLocation ?? '')
+        setDraftDescription(remoteState.draftDescription ?? '')
         setDraftFields(remoteState.draftFields ?? Object.fromEntries(scannedFields))
         setScanMode(remoteState.scanMode ?? null)
         setCertificateReadMethod(remoteState.certificateReadMethod ?? null)
@@ -284,7 +332,9 @@ function App() {
       compareIds,
       dealProgress,
       draftFields,
+      draftLocation,
       draftPrice,
+      draftDescription,
       favorites,
       inspectionChecks,
       lastDraftSavedAt: draftSavedAt,
@@ -306,7 +356,9 @@ function App() {
     compareIds,
     dealProgress,
     draftFields,
+    draftLocation,
     draftPrice,
+    draftDescription,
     favorites,
     inspectionChecks,
     draftSavedAt,
@@ -413,7 +465,7 @@ function App() {
   )
 
   const selectedVehicle = useMemo(
-    () => vehicles.find((vehicle) => vehicle.id === selectedId) ?? vehicles[0],
+    () => vehicles.find((vehicle) => vehicle.id === selectedId) ?? vehicles[0] ?? baseVehicles[0],
     [selectedId, vehicles],
   )
   const comparedVehicles = useMemo(
@@ -467,11 +519,12 @@ function App() {
     if (!draftFields.車名?.trim()) issues.push('車名')
     if (!draftFields.型式?.trim()) issues.push('型式')
     if (!draftFields.車検満了?.trim()) issues.push('車検満了')
+    if (!draftLocation.trim()) issues.push('地域')
     if (photoImages.filter(Boolean).length < 2) issues.push('掲載写真2枚以上')
     if (!Number.isFinite(draftPrice) || draftPrice < 50_000) issues.push('掲載価格')
     if (selectedOptions.length === 0) issues.push('装備候補')
     return issues
-  }, [draftFields, draftPrice, photoImages, selectedOptions])
+  }, [draftFields, draftLocation, draftPrice, photoImages, selectedOptions])
   const runtimeCapabilities = {
     camera: typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices),
     nfc: typeof window !== 'undefined' && Boolean(window.NDEFReader),
@@ -564,7 +617,10 @@ function App() {
   }
 
   const applyAnalysisResult = (result: AnalysisResult, fallbackMessage: string) => {
-    setDraftFields(result.fields ?? Object.fromEntries(scannedFields))
+    setDraftFields((current) => ({
+      ...current,
+      ...(result.fields ?? Object.fromEntries(scannedFields)),
+    }))
     setDraftPrice(result.price ?? 3180000)
     setAnalysisDone(true)
     setSelectedOptions(result.options ?? ['サンルーフ', 'ETC', 'アダプティブクルーズ', 'シートヒーター'])
@@ -572,6 +628,11 @@ function App() {
   }
 
   const runAnalysis = async () => {
+    if (photoImages.filter(Boolean).length === 0) {
+      setAnalysisMessage('先に外装・内装・メーターなどの写真を追加してください。')
+      setListingStep(1)
+      return
+    }
     setScanMode((current) => current ?? 'photo')
     setIsAnalyzing(true)
     setAnalysisMessage('写真から車種・装備・価格候補を読み取っています')
@@ -642,6 +703,11 @@ function App() {
       return
     }
 
+    if (!photoImages[3]) {
+      setAnalysisMessage('車検証画像を撮影または選択してください。')
+      return
+    }
+
     setIsAnalyzing(true)
     setAnalysisMessage('アップロードされた車検証画像から基本情報を読み取っています')
 
@@ -690,30 +756,32 @@ function App() {
       return
     }
 
+    const title = draftFields.車名?.trim() || '車名未入力'
     const newVehicle: Vehicle = {
-      id: 99,
+      id: Date.now(),
+      sellerId: currentUser.id,
       title: draftFields.車名 || 'トヨタ ハリアー',
-      maker: 'トヨタ',
-      grade: 'Z レザーパッケージ AI作成',
-      year: '2021年',
+      maker: inferMaker(title),
+      grade: draftFields.グレード?.trim() || `${draftFields.型式 ?? ''} 個人出品`.trim(),
+      year: inferYear(draftFields.初度登録 ?? ''),
       mileage: Number((draftFields.走行距離 ?? '28000').replace(/[^\d]/g, '')) || 28000,
       price: draftPrice,
-      location: '東京都 目黒区',
-      image: photoImages[0] ?? photoSlots[0].image,
+      location: draftLocation.trim(),
+      image: photoImages.find(Boolean) ?? photoSlots[0].image,
       tags: selectedOptions,
-      inspection: '2026年9月',
-      verified: true,
+      inspection: draftFields.車検満了 || '確認中',
+      verified: currentUser.verified,
       sellerName: currentUser.name,
+      description: draftDescription.trim() || '写真と車検証読み取り結果をもとに作成した個人出品です。現車確認後に購入申請へ進めます。',
+      createdAt: new Date().toISOString(),
+      status: 'published',
     }
 
-    setVehicles((current) =>
-      current.some((vehicle) => vehicle.id === 99)
-        ? current.map((vehicle) => (vehicle.id === 99 ? newVehicle : vehicle))
-        : [newVehicle, ...current],
-    )
-    setSelectedId(99)
+    setVehicles((current) => [newVehicle, ...current])
+    setSelectedId(newVehicle.id)
     setPublished(true)
     setListingStep(4)
+    setAnalysisMessage('掲載しました。検索画面に反映されています。')
   }
 
   const sendMessage = () => {
@@ -731,6 +799,10 @@ function App() {
   }
 
   const handleLogin = async () => {
+    if (!loginName.trim() || !loginPhone.trim()) {
+      setAuthMessage('表示名と電話番号を入力してください。')
+      return
+    }
     setAuthMessage('ログイン処理中です')
     const user = await loginUser({ name: loginName, phone: loginPhone, role: 'seller' })
     if (!user) {
@@ -782,7 +854,7 @@ function App() {
   const resetDemoData = () => {
     clearPersistedState()
     clearRemoteState()
-    setVehicles(baseVehicles)
+    setVehicles([])
     setSelectedId(1)
     setListingStep(0)
     setAnalysisDone(false)
@@ -790,7 +862,7 @@ function App() {
     setDealProgress(2)
     setChatMessages(initialChat)
     setCompareIds([])
-    setFavorites([1])
+    setFavorites([])
     setInspectionChecks([])
     setSavedSearches([])
     setScanMode(null)
@@ -800,8 +872,10 @@ function App() {
     setAnalysisMessage('')
     setSelectedOptions(['サンルーフ', 'ETC', 'アダプティブクルーズ'])
     setDraftPrice(3180000)
+    setDraftLocation('')
+    setDraftDescription('')
     setDraftFields(Object.fromEntries(scannedFields))
-    setPhotoImages(photoSlots.map((slot) => slot.image))
+    setPhotoImages(emptyPhotoImages())
   }
 
   const exportDemoData = () => {
@@ -812,7 +886,9 @@ function App() {
       compareIds,
       dealProgress,
       draftFields,
+      draftLocation,
       draftPrice,
+      draftDescription,
       favorites,
       inspectionChecks,
       lastDraftSavedAt: draftSavedAt,
@@ -898,20 +974,23 @@ function App() {
     setListingStep(Math.min(listingStep + 1, 4))
   }
 
-  const updatePhoto = (index: number, file: File | undefined) => {
+  const updatePhoto = async (index: number, file: File | undefined) => {
     if (!file) return
 
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      if (typeof reader.result !== 'string') return
+    setPhotoMessage(`${photoSlots[index]?.label ?? '画像'}を処理しています`)
+    try {
+      const imageData = await compressImageFile(file)
       setPhotoImages((current) =>
-        current.map((image, imageIndex) => (imageIndex === index ? reader.result as string : image)),
+        current.map((image, imageIndex) => (imageIndex === index ? imageData : image)),
       )
+      setPhotoMessage(`${photoSlots[index]?.label ?? '画像'}を追加しました`)
       if (scanMode === 'photo') {
         setAnalysisMessage('写真を受け取りました。AI解析を実行できます。')
       }
-    })
-    reader.readAsDataURL(file)
+      saveDraftNow()
+    } catch {
+      setPhotoMessage('画像の処理に失敗しました。別の写真で試してください。')
+    }
   }
 
   return (
@@ -1039,7 +1118,7 @@ function App() {
                 {currentUser ? (
                   <>
                     <UserCheck size={18} />
-                    <span>{currentUser.name}でログイン中</span>
+                    <span>{currentUser.name}で利用中</span>
                     <button onClick={handleLogout} type="button">ログアウト</button>
                   </>
                 ) : (
@@ -1048,14 +1127,14 @@ function App() {
                     <input
                       aria-label="表示名"
                       onChange={(event) => setLoginName(event.target.value)}
-                      placeholder="表示名"
+                      placeholder="名前またはニックネーム"
                       value={loginName}
                     />
                     <input
                       aria-label="電話番号"
                       inputMode="tel"
                       onChange={(event) => setLoginPhone(event.target.value)}
-                      placeholder="電話番号"
+                      placeholder="連絡用電話番号"
                       value={loginPhone}
                     />
                     <button onClick={handleLogin} type="button">ログイン</button>
@@ -1160,8 +1239,8 @@ function App() {
 
                     {certificateReadMethod === 'upload' && (
                       <label className="certificate-upload">
-                        <img src={photoImages[3] ?? photoSlots[3].image} alt="" />
-                        <span>車検証を撮影/選択</span>
+                        <img src={photoImages[3] || photoSlots[3].image} alt="" />
+                        <span>{photoImages[3] ? '車検証画像を変更' : '車検証を撮影/選択'}</span>
                         <input
                           type="file"
                           accept="image/*"
@@ -1213,10 +1292,11 @@ function App() {
                   </div>
                   <span>{photoImages.filter(Boolean).length}/4</span>
                 </div>
+                {photoMessage && <p className="photo-message">{photoMessage}</p>}
                 <div className="photo-capture-grid">
                   {photoSlots.map((slot, index) => (
-                    <label className="photo-slot" key={slot.label}>
-                      <img src={photoImages[index] ?? slot.image} alt="" />
+                    <label className={`photo-slot ${photoImages[index] ? 'has-image' : ''}`} key={slot.label}>
+                      <img src={photoImages[index] || slot.image} alt="" />
                       <span>{slot.label}</span>
                       {photoImages[index] ? <BadgeCheck size={17} /> : <ImagePlus size={17} />}
                       <input
@@ -1257,6 +1337,22 @@ function App() {
                     value={draftPrice}
                   />
                 </label>
+                <label>
+                  地域
+                  <input
+                    onChange={(event) => setDraftLocation(event.target.value)}
+                    placeholder="例: 東京都 世田谷区"
+                    value={draftLocation}
+                  />
+                </label>
+                <label className="wide">
+                  説明文
+                  <textarea
+                    onChange={(event) => setDraftDescription(event.target.value)}
+                    placeholder="整備記録、保管環境、現車確認可能な曜日など"
+                    value={draftDescription}
+                  />
+                </label>
                 <div className="price-presets">
                   <button onClick={() => setDraftPrice(3040000)} type="button">
                     早く売る
@@ -1277,7 +1373,7 @@ function App() {
                 <h3>{published ? '掲載済み' : '公開準備完了'}</h3>
                 <p>本人確認、車検証情報、装備候補、価格、名義変更条件を確認しました。</p>
                 <div className="publish-checks">
-                  {['車名', '型式', '車検満了', '掲載写真2枚以上', '掲載価格', '装備候補'].map((item) => (
+                  {['車名', '型式', '車検満了', '地域', '掲載写真2枚以上', '掲載価格', '装備候補'].map((item) => (
                     <span className={listingIssues.includes(item) ? 'missing' : ''} key={item}>
                       {listingIssues.includes(item) ? <X size={13} /> : <Check size={13} />}
                       {item}

@@ -13,8 +13,11 @@ export type Vehicle = {
   tags: string[]
   inspection: string
   verified: boolean
+  sellerId?: string
   description?: string
   sellerName?: string
+  createdAt?: string
+  status?: 'published' | 'draft' | 'paused'
 }
 
 export type ChatMessage = {
@@ -58,7 +61,9 @@ export type PersistedAppState = {
   compareIds: number[]
   dealProgress: number
   draftFields: Record<string, string>
+  draftLocation?: string
   draftPrice: number
+  draftDescription?: string
   favorites: number[]
   inspectionChecks: string[]
   lastDraftSavedAt?: string
