@@ -405,6 +405,7 @@ function App() {
   const filteredVehicles = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     const filtered = vehicles.filter((vehicle) => {
+      if (vehicle.status === 'draft' || vehicle.status === 'paused') return false
       const searchText =
         `${vehicle.title} ${vehicle.maker} ${vehicle.grade} ${vehicle.location} ${vehicle.tags.join(' ')}`.toLowerCase()
       const bodyTypes = getVehicleBodyTypes(vehicle)
@@ -488,6 +489,10 @@ function App() {
         ].filter(Boolean),
       })),
     [vehicles],
+  )
+  const myListings = useMemo(
+    () => (currentUser ? vehicles.filter((vehicle) => vehicle.sellerId === currentUser.id) : []),
+    [currentUser, vehicles],
   )
   const searchLabel = `${makerFilter === 'すべて' ? '全メーカー' : makerFilter} / ${
     modelFilter === 'すべて' ? '全車種' : modelFilter
@@ -789,6 +794,24 @@ function App() {
     setPublished(true)
     setListingStep(4)
     setAnalysisMessage('掲載しました。検索画面に反映されています。')
+  }
+
+  const startNewListing = () => {
+    setPublished(false)
+    setListingStep(0)
+    setAnalysisDone(false)
+    setScanMode(null)
+    setCertificateReadMethod(null)
+    setDraftSavedAt('')
+    setAnalysisMessage('新しい出品を作成できます。車検証または写真から始めてください。')
+    setPhotoMessage('')
+    setDraftFields(Object.fromEntries(scannedFields))
+    setDraftPrice(3180000)
+    setDraftLocation('')
+    setDraftDescription('')
+    setSelectedOptions([])
+    setSellerConsent(false)
+    setPhotoImages(emptyPhotoImages())
   }
 
   const sendMessage = () => {
@@ -1155,6 +1178,14 @@ function App() {
                 )}
               </div>
               {authMessage && <p className="draft-status">{authMessage}</p>}
+              {currentUser && (
+                <div className="seller-mini-status">
+                  <span>自分の掲載 {myListings.length}台</span>
+                  <button onClick={startNewListing} type="button">
+                    新しい出品
+                  </button>
+                </div>
+              )}
               {analysisMessage && <p className="analysis-message">{analysisMessage}</p>}
               <div className="wizard-actions">
                 <button
@@ -2085,6 +2116,38 @@ function App() {
                   編集
                 </button>
               </div>
+
+              {currentUser && (
+                <div className="seller-listings">
+                  <div className="mini-heading">
+                    <CarFront size={16} />
+                    自分の掲載
+                  </div>
+                  {myListings.length === 0 ? (
+                    <p>公開済みの掲載はまだありません。</p>
+                  ) : (
+                    myListings.slice(0, 3).map((vehicle) => (
+                      <button
+                        key={vehicle.id}
+                        onClick={() => {
+                          setSelectedId(vehicle.id)
+                          setDetailOpen(true)
+                          navigate('home')
+                        }}
+                        type="button"
+                      >
+                        <img src={vehicle.image} alt="" />
+                        <span>
+                          <strong>{vehicle.title}</strong>
+                          <small>
+                            {yen(vehicle.price)} / {vehicle.location}
+                          </small>
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="deal-card">
