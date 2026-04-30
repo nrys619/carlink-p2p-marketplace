@@ -149,7 +149,7 @@
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 44px 44px 44px max-content;
+  grid-template-columns: minmax(260px, 1fr) 44px max-content;
   gap: 10px;
   align-items: center;
   margin: 0 0 14px;
@@ -157,6 +157,10 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
+}
+
+.topbar.admin-tools {
+  grid-template-columns: minmax(260px, 1fr) 44px 44px 44px max-content;
 }
 
 .sync-status {
@@ -859,6 +863,30 @@
 .publish-checks span.missing {
   color: #b42318;
   background: #fff1f0;
+}
+
+.consent-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 460px;
+  padding: 10px 12px;
+  border: 1px solid #d7e2e0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.consent-check input {
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  accent-color: #0f766e;
+  flex: 0 0 auto;
 }
 
 .price-advisor {
@@ -2477,6 +2505,10 @@
   }
 
   .topbar {
+    grid-template-columns: 1fr 44px;
+  }
+
+  .topbar.admin-tools {
     grid-template-columns: 1fr 44px 44px 44px;
   }
 

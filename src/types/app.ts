@@ -64,6 +64,7 @@ export type PersistedAppState = {
   draftLocation?: string
   draftPrice: number
   draftDescription?: string
+  sellerConsent?: boolean
   favorites: number[]
   inspectionChecks: string[]
   lastDraftSavedAt?: string

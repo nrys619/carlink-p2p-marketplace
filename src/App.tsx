@@ -284,6 +284,7 @@ function App() {
   const [draftPrice, setDraftPrice] = useState(savedState?.draftPrice ?? 3180000)
   const [draftLocation, setDraftLocation] = useState(savedState?.draftLocation ?? '')
   const [draftDescription, setDraftDescription] = useState(savedState?.draftDescription ?? '')
+  const [sellerConsent, setSellerConsent] = useState(savedState?.sellerConsent ?? false)
   const [draftFields, setDraftFields] = useState<Record<string, string>>(
     savedState?.draftFields ?? Object.fromEntries(scannedFields),
   )
@@ -310,6 +311,7 @@ function App() {
         setDraftPrice(remoteState.draftPrice)
         setDraftLocation(remoteState.draftLocation ?? '')
         setDraftDescription(remoteState.draftDescription ?? '')
+        setSellerConsent(remoteState.sellerConsent ?? false)
         setDraftFields(remoteState.draftFields ?? Object.fromEntries(scannedFields))
         setScanMode(remoteState.scanMode ?? null)
         setCertificateReadMethod(remoteState.certificateReadMethod ?? null)
@@ -335,6 +337,7 @@ function App() {
       draftLocation,
       draftPrice,
       draftDescription,
+      sellerConsent,
       favorites,
       inspectionChecks,
       lastDraftSavedAt: draftSavedAt,
@@ -359,6 +362,7 @@ function App() {
     draftLocation,
     draftPrice,
     draftDescription,
+    sellerConsent,
     favorites,
     inspectionChecks,
     draftSavedAt,
@@ -523,8 +527,9 @@ function App() {
     if (photoImages.filter(Boolean).length < 2) issues.push('掲載写真2枚以上')
     if (!Number.isFinite(draftPrice) || draftPrice < 50_000) issues.push('掲載価格')
     if (selectedOptions.length === 0) issues.push('装備候補')
+    if (!sellerConsent) issues.push('確認同意')
     return issues
-  }, [draftFields, draftLocation, draftPrice, photoImages, selectedOptions])
+  }, [draftFields, draftLocation, draftPrice, photoImages, selectedOptions, sellerConsent])
   const runtimeCapabilities = {
     camera: typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices),
     nfc: typeof window !== 'undefined' && Boolean(window.NDEFReader),
@@ -750,6 +755,8 @@ function App() {
         setListingStep(1)
       } else if (listingIssues.includes('掲載価格')) {
         setListingStep(3)
+      } else if (listingIssues.includes('確認同意')) {
+        setListingStep(4)
       } else {
         setListingStep(2)
       }
@@ -874,6 +881,7 @@ function App() {
     setDraftPrice(3180000)
     setDraftLocation('')
     setDraftDescription('')
+    setSellerConsent(false)
     setDraftFields(Object.fromEntries(scannedFields))
     setPhotoImages(emptyPhotoImages())
   }
@@ -889,6 +897,7 @@ function App() {
       draftLocation,
       draftPrice,
       draftDescription,
+      sellerConsent,
       favorites,
       inspectionChecks,
       lastDraftSavedAt: draftSavedAt,
@@ -1044,7 +1053,7 @@ function App() {
           </section>
         )}
 
-        <header className="topbar">
+        <header className={`topbar ${activeView === 'admin' ? 'admin-tools' : ''}`}>
           <div className="search-box">
             <Search size={19} />
             <input
@@ -1057,12 +1066,16 @@ function App() {
           <button className="icon-button" type="button" aria-label="絞り込み">
             <SlidersHorizontal size={19} />
           </button>
-          <button className="icon-button" onClick={exportDemoData} type="button" aria-label="データを書き出す">
-            <Download size={18} />
-          </button>
-          <button className="icon-button" onClick={resetDemoData} type="button" aria-label="データ初期化">
-            <RotateCcw size={18} />
-          </button>
+          {activeView === 'admin' && (
+            <button className="icon-button" onClick={exportDemoData} type="button" aria-label="データを書き出す">
+              <Download size={18} />
+            </button>
+          )}
+          {activeView === 'admin' && (
+            <button className="icon-button" onClick={resetDemoData} type="button" aria-label="データ初期化">
+              <RotateCcw size={18} />
+            </button>
+          )}
           <button className="primary-action" onClick={() => navigate('sell')} type="button">
             <Camera size={18} />
             出品する
@@ -1371,19 +1384,26 @@ function App() {
               <div className="ready-panel">
                 <Check size={34} />
                 <h3>{published ? '掲載済み' : '公開準備完了'}</h3>
-                <p>本人確認、車検証情報、装備候補、価格、名義変更条件を確認しました。</p>
+                <p>読み取り結果、掲載写真、装備候補、価格、名義変更条件を確認してから公開できます。</p>
                 <div className="publish-checks">
-                  {['車名', '型式', '車検満了', '地域', '掲載写真2枚以上', '掲載価格', '装備候補'].map((item) => (
+                  {['車名', '型式', '車検満了', '地域', '掲載写真2枚以上', '掲載価格', '装備候補', '確認同意'].map((item) => (
                     <span className={listingIssues.includes(item) ? 'missing' : ''} key={item}>
                       {listingIssues.includes(item) ? <X size={13} /> : <Check size={13} />}
                       {item}
                     </span>
                   ))}
                 </div>
+                <label className="consent-check">
+                  <input
+                    checked={sellerConsent}
+                    onChange={(event) => setSellerConsent(event.target.checked)}
+                    type="checkbox"
+                  />
+                  AI読み取り内容、車両状態、修復歴/不具合、引き渡し条件を確認しました。
+                </label>
                 <button
                   className="primary-action"
                   onClick={publishListing}
-                  onPointerDown={publishListing}
                   type="button"
                 >
                   <Upload size={18} />
