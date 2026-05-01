@@ -240,6 +240,9 @@ function sanitizeDeal(input, user) {
     documentChecks: Array.isArray(input.documentChecks)
       ? input.documentChecks.map((check) => sanitizeString(check, 40)).filter(Boolean).slice(0, 20)
       : [],
+    handoverDate: sanitizeString(input.handoverDate || '', 60),
+    handoverPlace: sanitizeString(input.handoverPlace || '', 120),
+    handoverMemo: sanitizeString(input.handoverMemo || '', 300),
     createdAt: now,
     updatedAt: now,
   }
@@ -773,12 +776,14 @@ const requestHandler = async (request, response) => {
       const statuses = ['inquiry', 'applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed', 'cancelled']
       const hasStatus = body?.status !== undefined
       const hasDocumentChecks = Array.isArray(body?.documentChecks)
+      const hasHandoverPlan =
+        body?.handoverDate !== undefined || body?.handoverPlace !== undefined || body?.handoverMemo !== undefined
       const status = String(body?.status ?? '')
       if (hasStatus && !statuses.includes(status)) {
         sendJson(response, 400, { error: 'invalid status' })
         return
       }
-      if (!hasStatus && !hasDocumentChecks) {
+      if (!hasStatus && !hasDocumentChecks && !hasHandoverPlan) {
         sendJson(response, 400, { error: 'missing update fields' })
         return
       }
@@ -800,6 +805,9 @@ const requestHandler = async (request, response) => {
         ...deal,
         status: hasStatus ? status : deal.status,
         documentChecks,
+        handoverDate: hasHandoverPlan ? sanitizeString(body?.handoverDate ?? deal.handoverDate ?? '', 60) : deal.handoverDate ?? '',
+        handoverPlace: hasHandoverPlan ? sanitizeString(body?.handoverPlace ?? deal.handoverPlace ?? '', 120) : deal.handoverPlace ?? '',
+        handoverMemo: hasHandoverPlan ? sanitizeString(body?.handoverMemo ?? deal.handoverMemo ?? '', 300) : deal.handoverMemo ?? '',
         updatedAt: new Date().toISOString(),
       }
       deals[index] = nextDeal
@@ -817,6 +825,22 @@ const requestHandler = async (request, response) => {
           kind: 'deal',
           title: '取引ステータスが更新されました',
           body: `${deal.vehicleTitle} / ${status}`,
+          href: '#deal',
+        })
+      }
+      if (hasHandoverPlan) {
+        await createNotification({
+          userId: deal.buyerId,
+          kind: 'deal',
+          title: '現車確認・引き渡し予定を更新しました',
+          body: `${deal.vehicleTitle} / ${nextDeal.handoverDate || '日程未定'}`,
+          href: '#deal',
+        })
+        await createNotification({
+          userId: deal.sellerId,
+          kind: 'deal',
+          title: '現車確認・引き渡し予定を更新しました',
+          body: `${deal.vehicleTitle} / ${nextDeal.handoverDate || '日程未定'}`,
           href: '#deal',
         })
       }

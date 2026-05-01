@@ -183,6 +183,25 @@ export async function updateDealDocumentChecks(id: string, documentChecks: strin
   }
 }
 
+export async function updateDealHandoverPlan(
+  id: string,
+  payload: Pick<DealRecord, 'handoverDate' | 'handoverPlace' | 'handoverMemo'>,
+): Promise<DealRecord | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/deals/${id}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) return null
+    const result = (await response.json()) as { deal?: DealRecord }
+    return result.deal ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function loadConversationMessages(params: { dealId?: string; vehicleId: number }): Promise<ConversationMessage[]> {
   try {
     const searchParams = new URLSearchParams({ vehicleId: String(params.vehicleId) })

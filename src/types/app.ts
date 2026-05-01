@@ -90,6 +90,9 @@ export type DealRecord = {
   status: 'inquiry' | 'applied' | 'payment_pending' | 'paid' | 'handover' | 'transfer' | 'completed' | 'cancelled'
   note?: string
   documentChecks?: string[]
+  handoverDate?: string
+  handoverPlace?: string
+  handoverMemo?: string
   createdAt: string
   updatedAt: string
 }

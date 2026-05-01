@@ -55,6 +55,7 @@ import {
   savePersistedState,
   saveRemoteState,
   updateDealDocumentChecks,
+  updateDealHandoverPlan,
   updateListingStatus,
   updateDealStatus,
   uploadImage,
@@ -324,6 +325,9 @@ function App() {
   const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
   const [buyerNote, setBuyerNote] = useState('')
+  const [handoverDate, setHandoverDate] = useState('')
+  const [handoverPlace, setHandoverPlace] = useState('')
+  const [handoverMemo, setHandoverMemo] = useState('')
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([])
   const [notifications, setNotifications] = useState<NotificationRecord[]>([])
   const [editingListingId, setEditingListingId] = useState<number | null>(null)
@@ -1075,6 +1079,25 @@ function App() {
     setDeals((current) => current.map((deal) => (deal.id === updated.id ? updated : deal)))
     setDealProgress(Math.min(dealProgress + 1, dealSteps.length))
     setDealMessage('取引ステータスを更新しました。')
+    refreshNotifications()
+  }
+
+  const saveHandoverPlan = async () => {
+    if (!selectedDeal) {
+      setDealMessage('先に購入申請を作成してください。')
+      return
+    }
+    const updated = await updateDealHandoverPlan(selectedDeal.id, {
+      handoverDate: handoverDate || selectedDeal.handoverDate || '',
+      handoverPlace: handoverPlace || selectedDeal.handoverPlace || '',
+      handoverMemo: handoverMemo || selectedDeal.handoverMemo || '',
+    })
+    if (!updated) {
+      setDealMessage('現車確認・引き渡し予定を保存できませんでした。')
+      return
+    }
+    setDeals((current) => current.map((deal) => (deal.id === updated.id ? updated : deal)))
+    setDealMessage('現車確認・引き渡し予定を保存しました。')
     refreshNotifications()
   }
 
@@ -2330,12 +2353,45 @@ function App() {
                 </dl>
                 <button
                   className="primary-action full"
-                  onClick={advanceSelectedDeal}
-                  type="button"
-                >
+	                  onClick={advanceSelectedDeal}
+	                  type="button"
+	                >
                   <WalletCards size={18} />
                   {selectedDeal ? '取引を進める' : '購入申請を作成'}
                 </button>
+                <div className="handover-plan">
+                  <div>
+                    <p className="eyebrow">現車確認・引き渡し予定</p>
+                    <strong>{selectedDeal?.handoverDate || '未設定'}</strong>
+                  </div>
+                  <label>
+                    日時
+                    <input
+                      onChange={(event) => setHandoverDate(event.target.value)}
+                      placeholder="5月10日 14:00"
+                      value={handoverDate || selectedDeal?.handoverDate || ''}
+                    />
+                  </label>
+                  <label>
+                    場所
+                    <input
+                      onChange={(event) => setHandoverPlace(event.target.value)}
+                      placeholder="東京都品川区 周辺"
+                      value={handoverPlace || selectedDeal?.handoverPlace || ''}
+                    />
+                  </label>
+                  <label className="wide">
+                    メモ
+                    <textarea
+                      onChange={(event) => setHandoverMemo(event.target.value)}
+                      placeholder="駅前で現車確認、必要書類を持参など"
+                      value={handoverMemo || selectedDeal?.handoverMemo || ''}
+                    />
+                  </label>
+                  <button onClick={saveHandoverPlan} type="button">
+                    予定を保存
+                  </button>
+                </div>
                 <div className="safety-checklist">
                   <p>購入前チェック</p>
                   <span>
@@ -2355,8 +2411,8 @@ function App() {
                     現車確認と書類確認をチャットに記録
                   </span>
                 </div>
-	                <div className="inspection-checklist">
-	                  <div>
+                <div className="inspection-checklist">
+                  <div>
                     <p className="eyebrow">現車確認チェック</p>
                     <strong>
                       {activeInspectionChecks.length}/{inspectionCheckItems.length}

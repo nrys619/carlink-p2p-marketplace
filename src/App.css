@@ -1984,6 +1984,66 @@
   margin-bottom: 12px;
 }
 
+.handover-plan {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+  border: 1px solid #d7e2e0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fbfb;
+}
+
+.handover-plan > div,
+.handover-plan .wide,
+.handover-plan button {
+  grid-column: 1 / -1;
+}
+
+.handover-plan strong {
+  display: block;
+  margin-top: 3px;
+  color: #172036;
+}
+
+.handover-plan label {
+  display: grid;
+  gap: 6px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.handover-plan input,
+.handover-plan textarea {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--ink);
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+}
+
+.handover-plan textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.handover-plan button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #172036;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .cost-list {
   display: grid;
   gap: 10px;
