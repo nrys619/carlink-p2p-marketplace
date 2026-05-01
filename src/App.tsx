@@ -37,7 +37,9 @@ import { aiOptions, baseVehicles, initialChat, photoSlots, scannedFields } from 
 import {
   clearPersistedState,
   clearRemoteState,
+  createConversationMessage,
   createDeal,
+  loadConversationMessages,
   loadDeals,
   loadListings,
   loadMyListings,
@@ -54,7 +56,7 @@ import {
   uploadImage,
 } from './lib/storage'
 import { currentTimeLabel, mileageLabel, yen } from './lib/format'
-import type { AuthUser, DealRecord, PersistedAppState, SavedSearch, Vehicle, WizardStep } from './types/app'
+import type { AuthUser, ConversationMessage, DealRecord, PersistedAppState, SavedSearch, Vehicle, WizardStep } from './types/app'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -64,7 +66,7 @@ type BeforeInstallPromptEvent = Event & {
 type ReadinessStatus = {
   ok: boolean
   checks: { key: string; label: string; ok: boolean }[]
-  state: { vehicles: number; chatMessages: number; savedSearches: number; users?: number; listings?: number; deals?: number }
+  state: { vehicles: number; chatMessages: number; savedSearches: number; users?: number; listings?: number; deals?: number; messages?: number }
 }
 
 type AnalysisResult = {
@@ -300,6 +302,8 @@ function App() {
   const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
   const [buyerNote, setBuyerNote] = useState('')
+  const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([])
+  const [editingListingId, setEditingListingId] = useState<number | null>(null)
   const [chatMessages, setChatMessages] = useState(savedState?.chatMessages ?? initialChat)
   const [compareIds, setCompareIds] = useState<number[]>(savedState?.compareIds ?? [])
   const [favorites, setFavorites] = useState(savedState?.favorites ?? [])
@@ -546,8 +550,25 @@ function App() {
   )
   const selectedDeal = useMemo(
     () => deals.find((deal) => deal.vehicleId === selectedVehicle.id && deal.status !== 'cancelled') ?? null,
-    [deals, selectedVehicle.id],
+    [deals, selectedVehicle],
   )
+  const displayedMessages = useMemo(
+    () =>
+      conversationMessages.length > 0
+        ? conversationMessages.map((chat) => ({
+            body: chat.body,
+            from: chat.senderId && chat.senderId === selectedVehicle.sellerId ? 'seller' as const : 'buyer' as const,
+            time: new Date(chat.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+          }))
+        : chatMessages,
+    [chatMessages, conversationMessages, selectedVehicle],
+  )
+
+  useEffect(() => {
+    loadConversationMessages({ dealId: selectedDeal?.id, vehicleId: selectedVehicle.id }).then((messages) =>
+      setConversationMessages(messages),
+    )
+  }, [selectedDeal?.id, selectedVehicle])
   const reviewQueue = useMemo(
     () =>
       vehicles.map((vehicle) => ({
@@ -654,7 +675,9 @@ function App() {
       : listingStep === 1
         ? '写真AIで読み取る'
         : listingStep === 4
-          ? published
+          ? editingListingId
+            ? '掲載を更新'
+            : published
             ? '掲載を更新'
             : '掲載する'
           : '次へ進む'
@@ -844,8 +867,9 @@ function App() {
     }
 
     const title = draftFields.車名?.trim() || '車名未入力'
+    const existingVehicle = editingListingId ? vehicles.find((vehicle) => vehicle.id === editingListingId) : undefined
     const newVehicle: Vehicle = {
-      id: Date.now(),
+      id: editingListingId ?? Date.now(),
       sellerId: currentUser.id,
       title: draftFields.車名 || 'トヨタ ハリアー',
       maker: inferMaker(title),
@@ -860,22 +884,29 @@ function App() {
       verified: currentUser.verified,
       sellerName: currentUser.name,
       description: draftDescription.trim() || '写真と車検証読み取り結果をもとに作成した個人出品です。現車確認後に購入申請へ進めます。',
-      createdAt: new Date().toISOString(),
+      createdAt: existingVehicle?.createdAt ?? new Date().toISOString(),
       status: 'published',
     }
 
-    setVehicles((current) => [newVehicle, ...current])
+    setVehicles((current) => {
+      const exists = current.some((vehicle) => vehicle.id === newVehicle.id)
+      return exists
+        ? current.map((vehicle) => (vehicle.id === newVehicle.id ? newVehicle : vehicle))
+        : [newVehicle, ...current]
+    })
     saveListing(newVehicle).then((savedListing) => {
       if (!savedListing) return
       setVehicles((current) => current.map((vehicle) => (vehicle.id === newVehicle.id ? savedListing : vehicle)))
     })
     setSelectedId(newVehicle.id)
     setPublished(true)
+    setEditingListingId(null)
     setListingStep(4)
-    setAnalysisMessage('掲載しました。検索画面に反映されています。')
+    setAnalysisMessage(editingListingId ? '掲載内容を更新しました。' : '掲載しました。検索画面に反映されています。')
   }
 
   const startNewListing = () => {
+    setEditingListingId(null)
     setPublished(false)
     setListingStep(0)
     setAnalysisDone(false)
@@ -893,6 +924,31 @@ function App() {
     setPhotoImages(emptyPhotoImages())
   }
 
+  const editListing = (vehicle: Vehicle) => {
+    setEditingListingId(vehicle.id)
+    setSelectedId(vehicle.id)
+    setPublished(false)
+    setListingStep(3)
+    setAnalysisDone(true)
+    setScanMode('photo')
+    setDraftFields({
+      車名: vehicle.title,
+      型式: vehicle.grade,
+      初度登録: vehicle.year,
+      車検満了: vehicle.inspection,
+      走行距離: `${vehicle.mileage.toLocaleString('ja-JP')}km`,
+      排気量: draftFields.排気量 ?? '',
+    })
+    setDraftPrice(vehicle.price)
+    setDraftLocation(vehicle.location)
+    setDraftDescription(vehicle.description ?? '')
+    setSelectedOptions(vehicle.tags)
+    setSellerConsent(true)
+    setPhotoImages([vehicle.image, '', '', ''])
+    setAnalysisMessage('掲載内容を編集しています。価格・説明・写真を確認して更新できます。')
+    navigate('sell')
+  }
+
   const setListingStatus = async (vehicleId: number, status: Vehicle['status']) => {
     if (!status) return
     const updated = await updateListingStatus(vehicleId, status)
@@ -902,6 +958,20 @@ function App() {
     }
     setVehicles((current) => current.map((vehicle) => (vehicle.id === vehicleId ? updated : vehicle)))
     setAnalysisMessage(status === 'published' ? '掲載を再公開しました。' : '掲載を一時停止しました。')
+  }
+
+  const persistMessage = async (body: string) => {
+    const saved = await createConversationMessage({
+      body,
+      dealId: selectedDeal?.id,
+      senderId: currentUser?.id,
+      senderName: currentUser?.name,
+      senderRole: currentUser?.role ?? 'buyer',
+      vehicleId: selectedVehicle.id,
+    })
+    if (saved) {
+      setConversationMessages((current) => [...current, saved])
+    }
   }
 
   const sendMessage = () => {
@@ -915,6 +985,7 @@ function App() {
         time: currentTimeLabel(),
       },
     ])
+    persistMessage(body)
     setMessage('')
   }
 
@@ -997,6 +1068,7 @@ function App() {
         time: currentTimeLabel(),
       },
     ])
+    persistMessage(body)
   }
 
   const toggleFavorite = (vehicleId: number) => {
@@ -1088,7 +1160,7 @@ function App() {
 
   const navigate = (view: AppView) => {
     setActiveView(view)
-    window.location.hash =
+    const hash =
       view === 'home'
         ? 'search'
         : view === 'sell'
@@ -1098,6 +1170,7 @@ function App() {
             : view === 'admin'
               ? 'admin'
               : 'message'
+    window.history.pushState(null, '', `#${hash}`)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -1325,7 +1398,7 @@ function App() {
               {authMessage && <p className="draft-status">{authMessage}</p>}
               {currentUser && (
                 <div className="seller-mini-status">
-                  <span>自分の掲載 {myListings.length}台</span>
+                  <span>{editingListingId ? '掲載を編集中' : `自分の掲載 ${myListings.length}台`}</span>
                   <button onClick={startNewListing} type="button">
                     新しい出品
                   </button>
@@ -1583,7 +1656,7 @@ function App() {
                   type="button"
                 >
                   <Upload size={18} />
-                  {published ? '掲載を更新' : '掲載する'}
+                  {editingListingId || published ? '掲載を更新' : '掲載する'}
                 </button>
               </div>
             )}
@@ -2069,7 +2142,7 @@ function App() {
                   <MessageSquareText className="status-icon" size={22} />
                 </div>
                 <div className="chat-list">
-                  {chatMessages.map((chat, index) => (
+                  {displayedMessages.map((chat, index) => (
                     <div className={chat.from} key={`${chat.body}-${index}`}>
                       <p>{chat.body}</p>
                       <span>{chat.time}</span>
@@ -2320,6 +2393,12 @@ function App() {
                         </span>
                         <div>
                           <button
+                            onClick={() => editListing(vehicle)}
+                            type="button"
+                          >
+                            編集
+                          </button>
+                          <button
                             onClick={() => {
                               setSelectedId(vehicle.id)
                               setDetailOpen(true)
@@ -2437,6 +2516,10 @@ function App() {
                 <div>
                   <span>購入申請</span>
                   <strong>{readiness?.state.deals ?? deals.length}</strong>
+                </div>
+                <div>
+                  <span>相談履歴</span>
+                  <strong>{readiness?.state.messages ?? conversationMessages.length}</strong>
                 </div>
               </div>
             </section>

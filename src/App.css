@@ -1770,6 +1770,12 @@
   background: #0f766e;
 }
 
+.chat-list .seller {
+  justify-self: start;
+  border: 1px solid #d7e2e0;
+  background: #ffffff;
+}
+
 .chat-list p {
   margin: 0;
   font-size: 14px;

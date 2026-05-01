@@ -27,6 +27,17 @@ export type ChatMessage = {
   time: string
 }
 
+export type ConversationMessage = {
+  id: string
+  dealId?: string
+  vehicleId: number
+  senderId?: string
+  senderName: string
+  senderRole: 'buyer' | 'seller' | 'admin' | 'system'
+  body: string
+  createdAt: string
+}
+
 export type WizardStep = {
   label: string
   title: string

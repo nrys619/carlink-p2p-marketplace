@@ -13,6 +13,7 @@ const usersFile = join(dataDir, 'users.json')
 const sessionsFile = join(dataDir, 'sessions.json')
 const listingsFile = join(dataDir, 'listings.json')
 const dealsFile = join(dataDir, 'deals.json')
+const messagesFile = join(dataDir, 'messages.json')
 const uploadsDir = join(dataDir, 'uploads')
 const distDir = join(rootDir, 'dist')
 const port = Number(process.env.PORT ?? 8787)
@@ -240,6 +241,23 @@ function sanitizeDeal(input, user) {
   }
 }
 
+function sanitizeMessage(input, user) {
+  if (!isRecord(input)) return null
+  const vehicleId = sanitizeNumber(input.vehicleId)
+  const body = sanitizeString(input.body, 1000)
+  if (!vehicleId || !body) return null
+  return {
+    id: randomUUID(),
+    dealId: sanitizeString(input.dealId || '', 80),
+    vehicleId,
+    senderId: sanitizeString(user?.id || input.senderId || '', 80),
+    senderName: sanitizeString(user?.name || input.senderName || 'ゲスト', 40),
+    senderRole: ['buyer', 'seller', 'admin', 'system'].includes(input.senderRole) ? input.senderRole : user?.role || 'buyer',
+    body,
+    createdAt: new Date().toISOString(),
+  }
+}
+
 function sanitizeState(state) {
   if (state === null) return null
   return {
@@ -337,6 +355,7 @@ async function getReadiness() {
   const users = await readCollection(usersFile, [])
   const listings = await readCollection(listingsFile, [])
   const deals = await readCollection(dealsFile, [])
+  const messages = await readCollection(messagesFile, [])
 
   try {
     await stat(join(distDir, 'index.html'))
@@ -389,6 +408,7 @@ async function getReadiness() {
       users: Array.isArray(users) ? users.length : 0,
       listings: Array.isArray(listings) ? listings.length : 0,
       deals: Array.isArray(deals) ? deals.length : 0,
+      messages: Array.isArray(messages) ? messages.length : 0,
     },
   }
 }
@@ -724,6 +744,33 @@ const requestHandler = async (request, response) => {
       deals[index] = nextDeal
       await writeCollection(dealsFile, deals)
       sendJson(response, 200, { deal: nextDeal })
+      return
+    }
+
+    if (url.pathname === '/api/messages' && request.method === 'GET') {
+      const vehicleId = Number(url.searchParams.get('vehicleId') ?? 0)
+      const dealId = url.searchParams.get('dealId') ?? ''
+      const messages = await readCollection(messagesFile, [])
+      sendJson(response, 200, {
+        messages: messages
+          .filter((message) => (dealId ? message.dealId === dealId : true))
+          .filter((message) => (vehicleId ? message.vehicleId === vehicleId : true))
+          .slice(-200),
+      })
+      return
+    }
+
+    if (url.pathname === '/api/messages' && request.method === 'POST') {
+      const user = await getCurrentUser(request)
+      const body = await readJsonBody(request)
+      const message = sanitizeMessage(body, user)
+      if (!message) {
+        sendJson(response, 400, { error: 'invalid message' })
+        return
+      }
+      const messages = await readCollection(messagesFile, [])
+      await writeCollection(messagesFile, [...messages, message].slice(-1000))
+      sendJson(response, 200, { message })
       return
     }
 

@@ -1,4 +1,4 @@
-import type { AuthUser, DealRecord, PersistedAppState, Vehicle } from '../types/app'
+import type { AuthUser, ConversationMessage, DealRecord, PersistedAppState, Vehicle } from '../types/app'
 
 export const storageKey = 'carlink-p2p-marketplace-state'
 const sessionKey = 'carlink-p2p-marketplace-session'
@@ -162,6 +162,37 @@ export async function updateDealStatus(id: string, status: DealRecord['status'])
     if (!response.ok) return null
     const result = (await response.json()) as { deal?: DealRecord }
     return result.deal ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function loadConversationMessages(params: { dealId?: string; vehicleId: number }): Promise<ConversationMessage[]> {
+  try {
+    const searchParams = new URLSearchParams({ vehicleId: String(params.vehicleId) })
+    if (params.dealId) searchParams.set('dealId', params.dealId)
+    const response = await fetch(`${apiBase}/api/messages?${searchParams.toString()}`, { credentials: 'include' })
+    if (!response.ok) return []
+    const payload = (await response.json()) as { messages?: ConversationMessage[] }
+    return payload.messages ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function createConversationMessage(
+  payload: Omit<ConversationMessage, 'id' | 'createdAt' | 'senderName'> & { senderName?: string },
+): Promise<ConversationMessage | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/messages`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) return null
+    const result = (await response.json()) as { message?: ConversationMessage }
+    return result.message ?? null
   } catch {
     return null
   }
