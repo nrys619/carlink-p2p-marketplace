@@ -14,6 +14,7 @@ const sessionsFile = join(dataDir, 'sessions.json')
 const listingsFile = join(dataDir, 'listings.json')
 const dealsFile = join(dataDir, 'deals.json')
 const messagesFile = join(dataDir, 'messages.json')
+const notificationsFile = join(dataDir, 'notifications.json')
 const uploadsDir = join(dataDir, 'uploads')
 const distDir = join(rootDir, 'dist')
 const port = Number(process.env.PORT ?? 8787)
@@ -36,7 +37,7 @@ const mimeTypes = {
 const corsHeaders = {
   'Access-Control-Allow-Origin': process.env.CORS_ORIGIN ?? '*',
   'Access-Control-Allow-Credentials': 'true',
-  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
@@ -236,6 +237,9 @@ function sanitizeDeal(input, user) {
       ? input.status
       : 'applied',
     note: sanitizeString(input.note || '', 500),
+    documentChecks: Array.isArray(input.documentChecks)
+      ? input.documentChecks.map((check) => sanitizeString(check, 40)).filter(Boolean).slice(0, 20)
+      : [],
     createdAt: now,
     updatedAt: now,
   }
@@ -256,6 +260,25 @@ function sanitizeMessage(input, user) {
     body,
     createdAt: new Date().toISOString(),
   }
+}
+
+async function createNotification(input) {
+  const userId = sanitizeString(input?.userId || '', 80)
+  if (!userId) return null
+
+  const notification = {
+    id: randomUUID(),
+    userId,
+    kind: ['listing', 'deal', 'message', 'system'].includes(input?.kind) ? input.kind : 'system',
+    title: sanitizeString(input?.title, 80),
+    body: sanitizeString(input?.body, 240),
+    href: sanitizeString(input?.href || '', 120),
+    read: false,
+    createdAt: new Date().toISOString(),
+  }
+  const notifications = await readCollection(notificationsFile, [])
+  await writeCollection(notificationsFile, [notification, ...notifications].slice(0, 1000))
+  return notification
 }
 
 function sanitizeState(state) {
@@ -356,6 +379,7 @@ async function getReadiness() {
   const listings = await readCollection(listingsFile, [])
   const deals = await readCollection(dealsFile, [])
   const messages = await readCollection(messagesFile, [])
+  const notifications = await readCollection(notificationsFile, [])
 
   try {
     await stat(join(distDir, 'index.html'))
@@ -409,6 +433,7 @@ async function getReadiness() {
       listings: Array.isArray(listings) ? listings.length : 0,
       deals: Array.isArray(deals) ? deals.length : 0,
       messages: Array.isArray(messages) ? messages.length : 0,
+      notifications: Array.isArray(notifications) ? notifications.length : 0,
     },
   }
 }
@@ -689,6 +714,13 @@ const requestHandler = async (request, response) => {
           ? listings.map((item, index) => (index === existingIndex ? nextListing : item))
           : [nextListing, ...listings]
       await writeCollection(listingsFile, nextListings.slice(0, 500))
+      await createNotification({
+        userId: nextListing.sellerId,
+        kind: 'listing',
+        title: existingIndex >= 0 ? '掲載内容を更新しました' : '出品を保存しました',
+        body: nextListing.title,
+        href: '#list',
+      })
       sendJson(response, 200, { listing: publicListingView(nextListing) })
       return
     }
@@ -716,6 +748,20 @@ const requestHandler = async (request, response) => {
       }
       const deals = await readCollection(dealsFile, [])
       await writeCollection(dealsFile, [deal, ...deals].slice(0, 500))
+      await createNotification({
+        userId: deal.sellerId,
+        kind: 'deal',
+        title: '購入申請が入りました',
+        body: `${deal.vehicleTitle} / ${deal.buyerName}`,
+        href: '#deal',
+      })
+      await createNotification({
+        userId: deal.buyerId,
+        kind: 'deal',
+        title: '購入申請を保存しました',
+        body: deal.vehicleTitle,
+        href: '#deal',
+      })
       sendJson(response, 200, { deal })
       return
     }
@@ -724,9 +770,16 @@ const requestHandler = async (request, response) => {
       const user = await getCurrentUser(request)
       const id = url.pathname.split('/').pop()
       const body = await readJsonBody(request)
+      const statuses = ['inquiry', 'applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed', 'cancelled']
+      const hasStatus = body?.status !== undefined
+      const hasDocumentChecks = Array.isArray(body?.documentChecks)
       const status = String(body?.status ?? '')
-      if (!['inquiry', 'applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed', 'cancelled'].includes(status)) {
+      if (hasStatus && !statuses.includes(status)) {
         sendJson(response, 400, { error: 'invalid status' })
+        return
+      }
+      if (!hasStatus && !hasDocumentChecks) {
+        sendJson(response, 400, { error: 'missing update fields' })
         return
       }
       const deals = await readCollection(dealsFile, [])
@@ -740,10 +793,66 @@ const requestHandler = async (request, response) => {
         sendJson(response, 403, { error: 'forbidden' })
         return
       }
-      const nextDeal = { ...deal, status, updatedAt: new Date().toISOString() }
+      const documentChecks = hasDocumentChecks
+        ? body.documentChecks.map((check) => sanitizeString(check, 40)).filter(Boolean).slice(0, 20)
+        : deal.documentChecks ?? []
+      const nextDeal = {
+        ...deal,
+        status: hasStatus ? status : deal.status,
+        documentChecks,
+        updatedAt: new Date().toISOString(),
+      }
       deals[index] = nextDeal
       await writeCollection(dealsFile, deals)
+      if (hasStatus) {
+        await createNotification({
+          userId: deal.buyerId,
+          kind: 'deal',
+          title: '取引ステータスが更新されました',
+          body: `${deal.vehicleTitle} / ${status}`,
+          href: '#deal',
+        })
+        await createNotification({
+          userId: deal.sellerId,
+          kind: 'deal',
+          title: '取引ステータスが更新されました',
+          body: `${deal.vehicleTitle} / ${status}`,
+          href: '#deal',
+        })
+      }
       sendJson(response, 200, { deal: nextDeal })
+      return
+    }
+
+    if (url.pathname === '/api/notifications' && request.method === 'GET') {
+      const user = await getCurrentUser(request)
+      const notifications = await readCollection(notificationsFile, [])
+      sendJson(response, 200, {
+        notifications: user ? notifications.filter((notification) => notification.userId === user.id).slice(0, 100) : [],
+      })
+      return
+    }
+
+    if (url.pathname.startsWith('/api/notifications/') && request.method === 'PATCH') {
+      const user = await getCurrentUser(request)
+      const id = url.pathname.split('/').pop()
+      const notifications = await readCollection(notificationsFile, [])
+      const index = notifications.findIndex((notification) => notification.id === id)
+      if (!user) {
+        sendJson(response, 401, { error: 'login required' })
+        return
+      }
+      if (index < 0) {
+        sendJson(response, 404, { error: 'notification not found' })
+        return
+      }
+      if (notifications[index].userId !== user.id && user.role !== 'admin') {
+        sendJson(response, 403, { error: 'forbidden' })
+        return
+      }
+      notifications[index] = { ...notifications[index], read: true }
+      await writeCollection(notificationsFile, notifications)
+      sendJson(response, 200, { notification: notifications[index] })
       return
     }
 
@@ -770,6 +879,16 @@ const requestHandler = async (request, response) => {
       }
       const messages = await readCollection(messagesFile, [])
       await writeCollection(messagesFile, [...messages, message].slice(-1000))
+      const listings = await readCollection(listingsFile, [])
+      const listing = listings.find((item) => item.id === message.vehicleId)
+      const recipientId = listing?.sellerId && listing.sellerId !== message.senderId ? listing.sellerId : ''
+      await createNotification({
+        userId: recipientId,
+        kind: 'message',
+        title: '新しい購入相談があります',
+        body: `${message.senderName}: ${message.body}`,
+        href: '#message',
+      })
       sendJson(response, 200, { message })
       return
     }

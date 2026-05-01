@@ -1,4 +1,4 @@
-import type { AuthUser, ConversationMessage, DealRecord, PersistedAppState, Vehicle } from '../types/app'
+import type { AuthUser, ConversationMessage, DealRecord, NotificationRecord, PersistedAppState, Vehicle } from '../types/app'
 
 export const storageKey = 'carlink-p2p-marketplace-state'
 const sessionKey = 'carlink-p2p-marketplace-session'
@@ -167,6 +167,22 @@ export async function updateDealStatus(id: string, status: DealRecord['status'])
   }
 }
 
+export async function updateDealDocumentChecks(id: string, documentChecks: string[]): Promise<DealRecord | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/deals/${id}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documentChecks }),
+    })
+    if (!response.ok) return null
+    const result = (await response.json()) as { deal?: DealRecord }
+    return result.deal ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function loadConversationMessages(params: { dealId?: string; vehicleId: number }): Promise<ConversationMessage[]> {
   try {
     const searchParams = new URLSearchParams({ vehicleId: String(params.vehicleId) })
@@ -177,6 +193,31 @@ export async function loadConversationMessages(params: { dealId?: string; vehicl
     return payload.messages ?? []
   } catch {
     return []
+  }
+}
+
+export async function loadNotifications(): Promise<NotificationRecord[]> {
+  try {
+    const response = await fetch(`${apiBase}/api/notifications`, { credentials: 'include' })
+    if (!response.ok) return []
+    const payload = (await response.json()) as { notifications?: NotificationRecord[] }
+    return payload.notifications ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function markNotificationRead(id: string): Promise<NotificationRecord | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/notifications/${id}`, {
+      method: 'PATCH',
+      credentials: 'include',
+    })
+    if (!response.ok) return null
+    const payload = (await response.json()) as { notification?: NotificationRecord }
+    return payload.notification ?? null
+  } catch {
+    return null
   }
 }
 

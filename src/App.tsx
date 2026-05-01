@@ -1,5 +1,6 @@
 import {
   BadgeCheck,
+  Bell,
   CalendarDays,
   Camera,
   CarFront,
@@ -43,20 +44,32 @@ import {
   loadDeals,
   loadListings,
   loadMyListings,
+  loadNotifications,
   loadPersistedState,
   loadRemoteState,
   loadSession,
   loginUser,
   logoutUser,
+  markNotificationRead,
   saveListing,
   savePersistedState,
   saveRemoteState,
+  updateDealDocumentChecks,
   updateListingStatus,
   updateDealStatus,
   uploadImage,
 } from './lib/storage'
 import { currentTimeLabel, mileageLabel, yen } from './lib/format'
-import type { AuthUser, ConversationMessage, DealRecord, PersistedAppState, SavedSearch, Vehicle, WizardStep } from './types/app'
+import type {
+  AuthUser,
+  ConversationMessage,
+  DealRecord,
+  NotificationRecord,
+  PersistedAppState,
+  SavedSearch,
+  Vehicle,
+  WizardStep,
+} from './types/app'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -66,7 +79,16 @@ type BeforeInstallPromptEvent = Event & {
 type ReadinessStatus = {
   ok: boolean
   checks: { key: string; label: string; ok: boolean }[]
-  state: { vehicles: number; chatMessages: number; savedSearches: number; users?: number; listings?: number; deals?: number; messages?: number }
+  state: {
+    vehicles: number
+    chatMessages: number
+    savedSearches: number
+    users?: number
+    listings?: number
+    deals?: number
+    messages?: number
+    notifications?: number
+  }
 }
 
 type AnalysisResult = {
@@ -303,6 +325,7 @@ function App() {
   const [buyerPhone, setBuyerPhone] = useState('')
   const [buyerNote, setBuyerNote] = useState('')
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([])
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([])
   const [editingListingId, setEditingListingId] = useState<number | null>(null)
   const [chatMessages, setChatMessages] = useState(savedState?.chatMessages ?? initialChat)
   const [compareIds, setCompareIds] = useState<number[]>(savedState?.compareIds ?? [])
@@ -471,7 +494,12 @@ function App() {
       })
     })
     loadDeals().then((records) => setDeals(records))
+    loadNotifications().then((records) => setNotifications(records))
   }, [currentUser])
+
+  const refreshNotifications = () => {
+    loadNotifications().then((records) => setNotifications(records))
+  }
 
   const filteredVehicles = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -552,6 +580,14 @@ function App() {
     () => deals.find((deal) => deal.vehicleId === selectedVehicle.id && deal.status !== 'cancelled') ?? null,
     [deals, selectedVehicle],
   )
+  const unreadNotifications = useMemo(
+    () => notifications.filter((notification) => !notification.read).length,
+    [notifications],
+  )
+  const activeInspectionChecks = useMemo(
+    () => selectedDeal?.documentChecks ?? inspectionChecks,
+    [inspectionChecks, selectedDeal],
+  )
   const displayedMessages = useMemo(
     () =>
       conversationMessages.length > 0
@@ -569,6 +605,7 @@ function App() {
       setConversationMessages(messages),
     )
   }, [selectedDeal?.id, selectedVehicle])
+
   const reviewQueue = useMemo(
     () =>
       vehicles.map((vehicle) => ({
@@ -897,6 +934,7 @@ function App() {
     saveListing(newVehicle).then((savedListing) => {
       if (!savedListing) return
       setVehicles((current) => current.map((vehicle) => (vehicle.id === newVehicle.id ? savedListing : vehicle)))
+      refreshNotifications()
     })
     setSelectedId(newVehicle.id)
     setPublished(true)
@@ -958,6 +996,7 @@ function App() {
     }
     setVehicles((current) => current.map((vehicle) => (vehicle.id === vehicleId ? updated : vehicle)))
     setAnalysisMessage(status === 'published' ? '掲載を再公開しました。' : '掲載を一時停止しました。')
+    refreshNotifications()
   }
 
   const persistMessage = async (body: string) => {
@@ -971,6 +1010,7 @@ function App() {
     })
     if (saved) {
       setConversationMessages((current) => [...current, saved])
+      refreshNotifications()
     }
   }
 
@@ -1017,6 +1057,7 @@ function App() {
     setDeals((current) => [deal, ...current.filter((item) => item.id !== deal.id)])
     setDealProgress(Math.max(dealProgress, 1))
     setDealMessage('購入申請を保存しました。次は売主との現車確認・書類確認へ進めます。')
+    refreshNotifications()
   }
 
   const advanceSelectedDeal = async () => {
@@ -1034,6 +1075,7 @@ function App() {
     setDeals((current) => current.map((deal) => (deal.id === updated.id ? updated : deal)))
     setDealProgress(Math.min(dealProgress + 1, dealSteps.length))
     setDealMessage('取引ステータスを更新しました。')
+    refreshNotifications()
   }
 
   const handleLogin = async () => {
@@ -1051,6 +1093,7 @@ function App() {
     setBuyerName(user.name)
     setBuyerPhone(user.phone)
     setAuthMessage('ログインしました。出品と下書き保存を利用できます。')
+    refreshNotifications()
   }
 
   const handleLogout = async () => {
@@ -1087,9 +1130,16 @@ function App() {
   }
 
   const toggleInspectionCheck = (item: string) => {
-    setInspectionChecks((current) =>
-      current.includes(item) ? current.filter((check) => check !== item) : [...current, item],
-    )
+    const next = activeInspectionChecks.includes(item)
+      ? activeInspectionChecks.filter((check) => check !== item)
+      : [...activeInspectionChecks, item]
+    setInspectionChecks(next)
+    if (selectedDeal) {
+      updateDealDocumentChecks(selectedDeal.id, next).then((updated) => {
+        if (!updated) return
+        setDeals((records) => records.map((deal) => (deal.id === updated.id ? updated : deal)))
+      })
+    }
   }
 
   const resetDemoData = () => {
@@ -1317,6 +1367,10 @@ function App() {
               <RotateCcw size={18} />
             </button>
           )}
+          <button className="icon-button notification-button" onClick={() => navigate('admin')} type="button" aria-label="通知">
+            <Bell size={18} />
+            {unreadNotifications > 0 && <span>{unreadNotifications}</span>}
+          </button>
           <button className="primary-action" onClick={() => navigate('sell')} type="button">
             <Camera size={18} />
             出品する
@@ -1326,6 +1380,28 @@ function App() {
         <div className={`sync-status ${serverSynced ? 'online' : ''}`}>
           {serverSynced ? 'API保存: 有効' : 'API保存: 接続中'}
         </div>
+
+        {notifications.length > 0 && (
+          <section className="notification-strip">
+            <Bell size={15} />
+            <strong>{unreadNotifications > 0 ? `未読通知 ${unreadNotifications}件` : '通知は確認済み'}</strong>
+            <span>{notifications[0].title}</span>
+            <button
+              onClick={() => {
+                markNotificationRead(notifications[0].id).then((updated) => {
+                  if (updated) {
+                    setNotifications((records) =>
+                      records.map((notification) => (notification.id === updated.id ? updated : notification)),
+                    )
+                  }
+                })
+              }}
+              type="button"
+            >
+              確認
+            </button>
+          </section>
+        )}
 
         <section className={`hero-band ${activeView !== 'home' ? 'hidden-section' : ''}`} id="search">
           <div>
@@ -2185,12 +2261,24 @@ function App() {
                   <LockKeyhole className="status-icon" size={22} />
                 </div>
                 {selectedDeal ? (
-                  <div className="deal-record">
-                    <span>申請ID {selectedDeal.id.slice(0, 8)}</span>
-                    <strong>{dealStatusLabels[selectedDeal.status]}</strong>
+	                  <div className="deal-record">
+	                    <span>申請ID {selectedDeal.id.slice(0, 8)}</span>
+	                    <strong>{dealStatusLabels[selectedDeal.status]}</strong>
                     <p>
                       {selectedDeal.buyerName} / {yen(selectedDeal.amount)}
                     </p>
+                    <div className="deal-timeline">
+                      {(['applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed'] as DealRecord['status'][]).map(
+                        (status, index, steps) => {
+                          const currentIndex = steps.indexOf(selectedDeal.status)
+                          return (
+                            <span className={index <= currentIndex ? 'done' : ''} key={status}>
+                              {dealStatusLabels[status]}
+                            </span>
+                          )
+                        },
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="application-form">
@@ -2267,22 +2355,22 @@ function App() {
                     現車確認と書類確認をチャットに記録
                   </span>
                 </div>
-                <div className="inspection-checklist">
-                  <div>
+	                <div className="inspection-checklist">
+	                  <div>
                     <p className="eyebrow">現車確認チェック</p>
                     <strong>
-                      {inspectionChecks.length}/{inspectionCheckItems.length}
+                      {activeInspectionChecks.length}/{inspectionCheckItems.length}
                     </strong>
                   </div>
                   <div className="inspection-grid">
                     {inspectionCheckItems.map((item) => (
                       <button
-                        className={inspectionChecks.includes(item) ? 'done' : ''}
+                        className={activeInspectionChecks.includes(item) ? 'done' : ''}
                         key={item}
                         onClick={() => toggleInspectionCheck(item)}
                         type="button"
                       >
-                        {inspectionChecks.includes(item) ? <Check size={14} /> : <ClipboardCheck size={14} />}
+                        {activeInspectionChecks.includes(item) ? <Check size={14} /> : <ClipboardCheck size={14} />}
                         {item}
                       </button>
                     ))}
@@ -2521,9 +2609,52 @@ function App() {
                   <span>相談履歴</span>
                   <strong>{readiness?.state.messages ?? conversationMessages.length}</strong>
                 </div>
+                <div>
+                  <span>通知</span>
+                  <strong>{readiness?.state.notifications ?? notifications.length}</strong>
+                </div>
               </div>
             </section>
           </div>
+
+          <section className="admin-card">
+            <div className="section-header compact">
+              <div>
+                <p className="eyebrow">Notifications</p>
+                <h2>ユーザー通知</h2>
+              </div>
+              <Bell className="status-icon" size={22} />
+            </div>
+            <div className="notification-list">
+              {notifications.length === 0 ? (
+                <p>通知はまだありません。出品・購入申請・チャットが発生するとここに残ります。</p>
+              ) : (
+                notifications.map((notification) => (
+                  <article className={notification.read ? 'read' : ''} key={notification.id}>
+                    <div>
+                      <strong>{notification.title}</strong>
+                      <p>{notification.body}</p>
+                      <span>{new Date(notification.createdAt).toLocaleString('ja-JP')}</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        markNotificationRead(notification.id).then((updated) => {
+                          if (updated) {
+                            setNotifications((records) =>
+                              records.map((item) => (item.id === updated.id ? updated : item)),
+                            )
+                          }
+                        })
+                      }}
+                      type="button"
+                    >
+                      {notification.read ? '確認済み' : '既読'}
+                    </button>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
 
           <section className="admin-card">
             <div className="section-header compact">
@@ -2581,7 +2712,10 @@ function App() {
                     </div>
                     <span>{deal.id.slice(0, 8)}</span>
                     <button onClick={() => updateDealStatus(deal.id, 'payment_pending').then((updated) => {
-                      if (updated) setDeals((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+                      if (updated) {
+                        setDeals((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+                        refreshNotifications()
+                      }
                     })} type="button">
                       入金待ちへ
                     </button>

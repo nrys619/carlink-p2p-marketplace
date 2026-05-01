@@ -38,6 +38,17 @@ export type ConversationMessage = {
   createdAt: string
 }
 
+export type NotificationRecord = {
+  id: string
+  userId?: string
+  kind: 'listing' | 'deal' | 'message' | 'system'
+  title: string
+  body: string
+  href?: string
+  read: boolean
+  createdAt: string
+}
+
 export type WizardStep = {
   label: string
   title: string
@@ -78,6 +89,7 @@ export type DealRecord = {
   amount: number
   status: 'inquiry' | 'applied' | 'payment_pending' | 'paid' | 'handover' | 'transfer' | 'completed' | 'cancelled'
   note?: string
+  documentChecks?: string[]
   createdAt: string
   updatedAt: string
 }
