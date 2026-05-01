@@ -13,6 +13,7 @@ const usersFile = join(dataDir, 'users.json')
 const sessionsFile = join(dataDir, 'sessions.json')
 const listingsFile = join(dataDir, 'listings.json')
 const dealsFile = join(dataDir, 'deals.json')
+const uploadsDir = join(dataDir, 'uploads')
 const distDir = join(rootDir, 'dist')
 const port = Number(process.env.PORT ?? 8787)
 const isHttps = Boolean(process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH)
@@ -23,6 +24,10 @@ const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
 }
@@ -148,6 +153,16 @@ function sanitizeNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback
 }
 
+function parseDataUrl(value) {
+  const match = String(value ?? '').match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/)
+  if (!match) return null
+  const mimeType = match[1] === 'image/jpg' ? 'image/jpeg' : match[1]
+  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
+  const buffer = Buffer.from(match[2], 'base64')
+  if (buffer.length === 0 || buffer.length > 8_000_000) return null
+  return { buffer, extension, mimeType }
+}
+
 function sanitizeListing(input, owner) {
   if (!isRecord(input)) return null
   const title = sanitizeString(input.title, 80)
@@ -179,6 +194,21 @@ function publicListingView(listing) {
   return {
     ...listing,
     sellerId: listing.sellerId,
+  }
+}
+
+async function saveUpload(dataUrl) {
+  const parsed = parseDataUrl(dataUrl)
+  if (!parsed) return null
+  await mkdir(uploadsDir, { recursive: true })
+  const id = randomUUID()
+  const filename = `${id}.${parsed.extension}`
+  await writeFile(join(uploadsDir, filename), parsed.buffer)
+  return {
+    id,
+    url: `/uploads/${filename}`,
+    mimeType: parsed.mimeType,
+    size: parsed.buffer.length,
   }
 }
 
@@ -259,6 +289,24 @@ function sendNoContent(response) {
 
 async function serveStatic(request, response) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host}`)
+
+  if (url.pathname.startsWith('/uploads/')) {
+    const filename = normalize(decodeURIComponent(url.pathname.replace('/uploads/', ''))).replace(/^(\.\.[/\\])+/, '')
+    const filePath = join(uploadsDir, filename)
+    try {
+      await stat(filePath)
+      response.writeHead(200, {
+        ...securityHeaders,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Content-Type': mimeTypes[extname(filePath)] ?? 'application/octet-stream',
+      })
+      createReadStream(filePath).pipe(response)
+    } catch {
+      sendJson(response, 404, { error: 'upload not found' })
+    }
+    return
+  }
+
   const requestedPath = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '')
   let filePath = join(distDir, requestedPath === '/' ? 'index.html' : requestedPath)
 
@@ -313,6 +361,11 @@ async function getReadiness() {
   checks.push({
     key: 'storage',
     label: 'Server data directory',
+    ok: true,
+  })
+  checks.push({
+    key: 'uploads',
+    label: 'Image upload storage',
     ok: true,
   })
   checks.push({
@@ -542,13 +595,57 @@ const requestHandler = async (request, response) => {
       return
     }
 
+    if (url.pathname === '/api/uploads' && request.method === 'POST') {
+      const body = await readJsonBody(request)
+      const upload = await saveUpload(body?.image)
+      if (!upload) {
+        sendJson(response, 400, { error: 'invalid image' })
+        return
+      }
+      sendJson(response, 200, { upload })
+      return
+    }
+
     if (url.pathname === '/api/listings' && request.method === 'GET') {
+      const user = await getCurrentUser(request)
       const listings = await readCollection(listingsFile, [])
+      const scope = url.searchParams.get('scope')
+      if (scope === 'mine' && user) {
+        sendJson(response, 200, { listings: listings.filter((listing) => listing.sellerId === user.id).map(publicListingView) })
+        return
+      }
       sendJson(response, 200, {
         listings: listings
           .filter((listing) => listing.status !== 'draft' && listing.status !== 'paused')
           .map(publicListingView),
       })
+      return
+    }
+
+    if (url.pathname.startsWith('/api/listings/') && request.method === 'PATCH') {
+      const user = await getCurrentUser(request)
+      const id = Number(url.pathname.split('/').pop())
+      const body = await readJsonBody(request)
+      const status = String(body?.status ?? '')
+      if (!['published', 'draft', 'paused'].includes(status)) {
+        sendJson(response, 400, { error: 'invalid status' })
+        return
+      }
+      const listings = await readCollection(listingsFile, [])
+      const index = listings.findIndex((listing) => listing.id === id)
+      if (index < 0) {
+        sendJson(response, 404, { error: 'listing not found' })
+        return
+      }
+      const listing = listings[index]
+      if (user && listing.sellerId && listing.sellerId !== user.id && user.role !== 'admin') {
+        sendJson(response, 403, { error: 'forbidden' })
+        return
+      }
+      const nextListing = { ...listing, status, updatedAt: new Date().toISOString() }
+      listings[index] = nextListing
+      await writeCollection(listingsFile, listings)
+      sendJson(response, 200, { listing: publicListingView(nextListing) })
       return
     }
 

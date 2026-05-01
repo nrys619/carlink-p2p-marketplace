@@ -40,6 +40,7 @@ import {
   createDeal,
   loadDeals,
   loadListings,
+  loadMyListings,
   loadPersistedState,
   loadRemoteState,
   loadSession,
@@ -48,7 +49,9 @@ import {
   saveListing,
   savePersistedState,
   saveRemoteState,
+  updateListingStatus,
   updateDealStatus,
+  uploadImage,
 } from './lib/storage'
 import { currentTimeLabel, mileageLabel, yen } from './lib/format'
 import type { AuthUser, DealRecord, PersistedAppState, SavedSearch, Vehicle, WizardStep } from './types/app'
@@ -217,6 +220,13 @@ const inferYear = (value: string) => {
   const heiseiYear = value.match(/平成\s*(\d+)/)?.[1]
   if (heiseiYear) return `${1988 + Number(heiseiYear)}年`
   return '年式未入力'
+}
+
+const toAnalysisImageUrl = (image: string) => {
+  if (!image) return image
+  if (image.startsWith('data:') || image.startsWith('http')) return image
+  if (typeof window === 'undefined') return image
+  return new URL(image, window.location.origin).toString()
 }
 
 const compressImageFile = (file: File) =>
@@ -438,6 +448,26 @@ function App() {
     })
     loadDeals().then((records) => setDeals(records))
   }, [])
+
+  useEffect(() => {
+    if (!currentUser) return
+    loadMyListings().then((listings) => {
+      if (listings.length === 0) return
+      setVehicles((current) => {
+        const merged = [...current]
+        for (const listing of listings) {
+          const index = merged.findIndex((vehicle) => vehicle.id === listing.id)
+          if (index >= 0) {
+            merged[index] = listing
+          } else {
+            merged.unshift(listing)
+          }
+        }
+        return merged
+      })
+    })
+    loadDeals().then((records) => setDeals(records))
+  }, [currentUser])
 
   const filteredVehicles = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -692,7 +722,11 @@ function App() {
       const response = await fetch('/api/analyze-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: photoImages[0], images: photoImages.filter(Boolean).slice(0, 4), mode: scanMode ?? 'photo' }),
+        body: JSON.stringify({
+          image: toAnalysisImageUrl(photoImages[0]),
+          images: photoImages.filter(Boolean).slice(0, 4).map(toAnalysisImageUrl),
+          mode: scanMode ?? 'photo',
+        }),
       })
       const result = (await response.json()) as AnalysisResult
       applyAnalysisResult(result, 'AI読み取りが完了しました。内容を確認してください。')
@@ -766,7 +800,7 @@ function App() {
       const response = await fetch('/api/analyze-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: photoImages[3], mode: 'certificate' }),
+        body: JSON.stringify({ image: toAnalysisImageUrl(photoImages[3]), mode: 'certificate' }),
       })
       const result = (await response.json()) as AnalysisResult
       applyAnalysisResult(result, '車検証の読み取りが完了しました。次に掲載写真を追加してください。')
@@ -857,6 +891,17 @@ function App() {
     setSelectedOptions([])
     setSellerConsent(false)
     setPhotoImages(emptyPhotoImages())
+  }
+
+  const setListingStatus = async (vehicleId: number, status: Vehicle['status']) => {
+    if (!status) return
+    const updated = await updateListingStatus(vehicleId, status)
+    if (!updated) {
+      setAnalysisMessage('掲載ステータスを更新できませんでした。')
+      return
+    }
+    setVehicles((current) => current.map((vehicle) => (vehicle.id === vehicleId ? updated : vehicle)))
+    setAnalysisMessage(status === 'published' ? '掲載を再公開しました。' : '掲載を一時停止しました。')
   }
 
   const sendMessage = () => {
@@ -1106,10 +1151,16 @@ function App() {
     setPhotoMessage(`${photoSlots[index]?.label ?? '画像'}を処理しています`)
     try {
       const imageData = await compressImageFile(file)
+      const uploadedUrl = await uploadImage(imageData)
+      const imageSource = uploadedUrl ?? imageData
       setPhotoImages((current) =>
-        current.map((image, imageIndex) => (imageIndex === index ? imageData : image)),
+        current.map((image, imageIndex) => (imageIndex === index ? imageSource : image)),
       )
-      setPhotoMessage(`${photoSlots[index]?.label ?? '画像'}を追加しました`)
+      setPhotoMessage(
+        uploadedUrl
+          ? `${photoSlots[index]?.label ?? '画像'}を保存しました`
+          : `${photoSlots[index]?.label ?? '画像'}を一時保存しました`,
+      )
       if (scanMode === 'photo') {
         setAnalysisMessage('写真を受け取りました。AI解析を実行できます。')
       }
@@ -2259,23 +2310,33 @@ function App() {
                     <p>公開済みの掲載はまだありません。</p>
                   ) : (
                     myListings.slice(0, 3).map((vehicle) => (
-                      <button
-                        key={vehicle.id}
-                        onClick={() => {
-                          setSelectedId(vehicle.id)
-                          setDetailOpen(true)
-                          navigate('home')
-                        }}
-                        type="button"
-                      >
+                      <article className="seller-listing-row" key={vehicle.id}>
                         <img src={vehicle.image} alt="" />
                         <span>
                           <strong>{vehicle.title}</strong>
                           <small>
-                            {yen(vehicle.price)} / {vehicle.location}
+                            {yen(vehicle.price)} / {vehicle.location} / {vehicle.status === 'paused' ? '停止中' : '公開中'}
                           </small>
                         </span>
-                      </button>
+                        <div>
+                          <button
+                            onClick={() => {
+                              setSelectedId(vehicle.id)
+                              setDetailOpen(true)
+                              navigate('home')
+                            }}
+                            type="button"
+                          >
+                            詳細
+                          </button>
+                          <button
+                            onClick={() => setListingStatus(vehicle.id, vehicle.status === 'paused' ? 'published' : 'paused')}
+                            type="button"
+                          >
+                            {vehicle.status === 'paused' ? '再公開' : '停止'}
+                          </button>
+                        </div>
+                      </article>
                     ))
                   )}
                 </div>
@@ -2399,11 +2460,51 @@ function App() {
                       {yen(vehicle.price)} / {mileageLabel(vehicle.mileage)} / {vehicle.location}
                     </p>
                   </div>
-                  <div className="risk-tags">
-                    {risks.length ? risks.map((risk) => <span key={risk}>{risk}</span>) : <span className="ok">確認済み</span>}
+	                  <div className="risk-tags">
+	                    {risks.length ? risks.map((risk) => <span key={risk}>{risk}</span>) : <span className="ok">確認済み</span>}
+	                  </div>
+                  <div className="review-actions">
+                    <button onClick={() => setListingStatus(vehicle.id, 'published')} type="button">
+                      公開
+                    </button>
+                    <button onClick={() => setListingStatus(vehicle.id, 'paused')} type="button">
+                      停止
+                    </button>
                   </div>
-                </article>
+	                </article>
               ))}
+            </div>
+          </section>
+
+          <section className="admin-card">
+            <div className="section-header compact">
+              <div>
+                <p className="eyebrow">Deal Queue</p>
+                <h2>購入申請キュー</h2>
+              </div>
+              <WalletCards className="status-icon" size={22} />
+            </div>
+            <div className="deal-table">
+              {deals.length === 0 ? (
+                <p>購入申請はまだありません。</p>
+              ) : (
+                deals.map((deal) => (
+                  <article key={deal.id}>
+                    <div>
+                      <h3>{deal.vehicleTitle}</h3>
+                      <p>
+                        {deal.buyerName} / {yen(deal.amount)} / {dealStatusLabels[deal.status]}
+                      </p>
+                    </div>
+                    <span>{deal.id.slice(0, 8)}</span>
+                    <button onClick={() => updateDealStatus(deal.id, 'payment_pending').then((updated) => {
+                      if (updated) setDeals((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+                    })} type="button">
+                      入金待ちへ
+                    </button>
+                  </article>
+                ))
+              )}
             </div>
           </section>
         </section>

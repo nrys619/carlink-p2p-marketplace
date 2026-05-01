@@ -2232,9 +2232,9 @@
   font-size: 13px;
 }
 
-.seller-listings button {
+.seller-listing-row {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 58px minmax(0, 1fr) max-content;
   align-items: center;
   gap: 10px;
   min-height: 62px;
@@ -2244,6 +2244,24 @@
   background: #ffffff;
   color: #1f2933;
   text-align: left;
+}
+
+.seller-listing-row > div {
+  display: flex;
+  gap: 6px;
+}
+
+.seller-listing-row button,
+.review-actions button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #eef5f4;
+  color: #0f5f59;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
   cursor: pointer;
 }
 
@@ -2531,12 +2549,69 @@
 
 .review-table article {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr) minmax(180px, 0.8fr);
+  grid-template-columns: 86px minmax(0, 1fr) minmax(180px, 0.8fr) max-content;
   gap: 12px;
   align-items: center;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.review-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: end;
+}
+
+.deal-table {
+  display: grid;
+  gap: 10px;
+}
+
+.deal-table > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.deal-table article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px max-content;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.deal-table h3,
+.deal-table p {
+  margin: 0;
+}
+
+.deal-table h3 {
+  font-size: 15px;
+}
+
+.deal-table p,
+.deal-table span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.deal-table button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #172036;
+  color: #ffffff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .review-table img {

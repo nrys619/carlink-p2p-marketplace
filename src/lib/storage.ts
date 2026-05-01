@@ -65,6 +65,17 @@ export async function loadListings(): Promise<Vehicle[]> {
   }
 }
 
+export async function loadMyListings(): Promise<Vehicle[]> {
+  try {
+    const response = await fetch(`${apiBase}/api/listings?scope=mine`, { credentials: 'include' })
+    if (!response.ok) return []
+    const payload = (await response.json()) as { listings?: Vehicle[] }
+    return payload.listings ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function saveListing(vehicle: Vehicle): Promise<Vehicle | null> {
   try {
     const response = await fetch(`${apiBase}/api/listings`, {
@@ -76,6 +87,38 @@ export async function saveListing(vehicle: Vehicle): Promise<Vehicle | null> {
     if (!response.ok) return null
     const payload = (await response.json()) as { listing?: Vehicle }
     return payload.listing ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function updateListingStatus(id: number, status: Vehicle['status']): Promise<Vehicle | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/listings/${id}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+    if (!response.ok) return null
+    const payload = (await response.json()) as { listing?: Vehicle }
+    return payload.listing ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function uploadImage(image: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/uploads`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image }),
+    })
+    if (!response.ok) return null
+    const payload = (await response.json()) as { upload?: { url?: string } }
+    return payload.upload?.url ?? null
   } catch {
     return null
   }

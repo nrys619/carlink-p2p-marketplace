@@ -17,6 +17,7 @@ export type Vehicle = {
   description?: string
   sellerName?: string
   createdAt?: string
+  updatedAt?: string
   status?: 'published' | 'draft' | 'paused'
 }
 
