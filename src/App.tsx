@@ -155,6 +155,12 @@ const dealEventLabels = {
   system: '記録',
 } as const
 
+const authRoleLabels: Record<AuthUser['role'], string> = {
+  seller: '売主',
+  buyer: '買主',
+  admin: '運営',
+}
+
 const inspectionCheckItems = [
   '車検証と車台番号',
   '修復歴・冠水歴',
@@ -326,6 +332,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [loginName, setLoginName] = useState('')
   const [loginPhone, setLoginPhone] = useState('')
+  const [loginRole, setLoginRole] = useState<AuthUser['role']>('seller')
   const [authMessage, setAuthMessage] = useState('')
   const [nfcReading, setNfcReading] = useState(false)
   const [photoMessage, setPhotoMessage] = useState('')
@@ -1120,7 +1127,7 @@ function App() {
       return
     }
     setAuthMessage('ログイン処理中です')
-    const user = await loginUser({ name: loginName, phone: loginPhone, role: 'seller' })
+    const user = await loginUser({ name: loginName, phone: loginPhone, role: loginRole })
     if (!user) {
       setAuthMessage('ログインできませんでした。入力内容を確認してください。')
       return
@@ -1128,7 +1135,7 @@ function App() {
     setCurrentUser(user)
     setBuyerName(user.name)
     setBuyerPhone(user.phone)
-    setAuthMessage('ログインしました。出品と下書き保存を利用できます。')
+    setAuthMessage(`${authRoleLabels[user.role]}としてログインしました。`)
     refreshNotifications()
   }
 
@@ -1481,13 +1488,15 @@ function App() {
               <h2>{currentWizard.title}</h2>
               <p>{currentWizard.body}</p>
               <div className="auth-card compact">
-                {currentUser ? (
-                  <>
-                    <UserCheck size={18} />
-                    <span>{currentUser.name}で利用中</span>
-                    <button onClick={handleLogout} type="button">ログアウト</button>
-                  </>
-                ) : (
+	                {currentUser ? (
+	                  <>
+	                    <UserCheck size={18} />
+                    <span>
+                      {currentUser.name} / {authRoleLabels[currentUser.role]}
+                    </span>
+	                    <button onClick={handleLogout} type="button">ログアウト</button>
+	                  </>
+	                ) : (
                   <>
                     <LockKeyhole size={18} />
                     <input
@@ -1500,12 +1509,24 @@ function App() {
                       aria-label="電話番号"
                       inputMode="tel"
                       onChange={(event) => setLoginPhone(event.target.value)}
-                      placeholder="連絡用電話番号"
-                      value={loginPhone}
-                    />
-                    <button onClick={handleLogin} type="button">ログイン</button>
-                  </>
-                )}
+	                      placeholder="連絡用電話番号"
+	                      value={loginPhone}
+	                    />
+                    <div className="role-selector">
+                      {(['seller', 'buyer', 'admin'] as AuthUser['role'][]).map((role) => (
+                        <button
+                          className={loginRole === role ? 'active' : ''}
+                          key={role}
+                          onClick={() => setLoginRole(role)}
+                          type="button"
+                        >
+                          {authRoleLabels[role]}
+                        </button>
+                      ))}
+                    </div>
+	                    <button onClick={handleLogin} type="button">ログイン</button>
+	                  </>
+	                )}
               </div>
               {authMessage && <p className="draft-status">{authMessage}</p>}
               {currentUser && (

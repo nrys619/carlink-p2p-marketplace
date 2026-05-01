@@ -469,7 +469,7 @@
 }
 
 .auth-card.compact {
-  grid-template-columns: 22px minmax(0, 1fr) minmax(108px, 0.8fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(108px, 0.8fr) minmax(156px, 0.9fr) auto;
 }
 
 .auth-card svg {
@@ -506,6 +506,26 @@
   font-size: 13px;
   font-weight: 900;
   cursor: pointer;
+}
+
+.role-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.role-selector button {
+  min-height: 34px;
+  padding: 0 7px;
+  color: #314153;
+  background: #ffffff;
+  border: 1px solid var(--line);
+}
+
+.role-selector button.active {
+  color: #ffffff;
+  background: #0f766e;
+  border-color: #0f766e;
 }
 
 .seller-mini-status {
