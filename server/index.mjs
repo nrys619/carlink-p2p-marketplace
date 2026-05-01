@@ -223,6 +223,9 @@ function sanitizeDeal(input, user) {
   const amount = sanitizeNumber(input.amount)
   if (!vehicleId || !vehicleTitle || !buyerName || buyerPhone.length < 8 || amount < 50_000) return null
   const now = new Date().toISOString()
+  const status = ['inquiry', 'applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed', 'cancelled'].includes(input.status)
+    ? input.status
+    : 'applied'
   return {
     id: randomUUID(),
     vehicleId,
@@ -233,9 +236,7 @@ function sanitizeDeal(input, user) {
     sellerId: sanitizeString(input.sellerId || '', 80),
     sellerName: sanitizeString(input.sellerName || '', 40),
     amount,
-    status: ['inquiry', 'applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed', 'cancelled'].includes(input.status)
-      ? input.status
-      : 'applied',
+    status,
     note: sanitizeString(input.note || '', 500),
     documentChecks: Array.isArray(input.documentChecks)
       ? input.documentChecks.map((check) => sanitizeString(check, 40)).filter(Boolean).slice(0, 20)
@@ -243,9 +244,29 @@ function sanitizeDeal(input, user) {
     handoverDate: sanitizeString(input.handoverDate || '', 60),
     handoverPlace: sanitizeString(input.handoverPlace || '', 120),
     handoverMemo: sanitizeString(input.handoverMemo || '', 300),
+    events: [
+      {
+        id: randomUUID(),
+        kind: 'created',
+        title: '購入申請を作成',
+        body: `${buyerName} が ${vehicleTitle} に購入申請しました。`,
+        createdAt: now,
+      },
+    ],
     createdAt: now,
     updatedAt: now,
   }
+}
+
+function appendDealEvent(deal, event) {
+  const nextEvent = {
+    id: randomUUID(),
+    kind: ['created', 'status', 'documents', 'handover', 'message', 'system'].includes(event?.kind) ? event.kind : 'system',
+    title: sanitizeString(event?.title, 80),
+    body: sanitizeString(event?.body, 300),
+    createdAt: new Date().toISOString(),
+  }
+  return [...(Array.isArray(deal.events) ? deal.events : []), nextEvent].slice(-80)
 }
 
 function sanitizeMessage(input, user) {
@@ -810,6 +831,29 @@ const requestHandler = async (request, response) => {
         handoverMemo: hasHandoverPlan ? sanitizeString(body?.handoverMemo ?? deal.handoverMemo ?? '', 300) : deal.handoverMemo ?? '',
         updatedAt: new Date().toISOString(),
       }
+      let events = Array.isArray(deal.events) ? deal.events : []
+      if (hasStatus && status !== deal.status) {
+        events = appendDealEvent({ ...deal, events }, {
+          kind: 'status',
+          title: '取引ステータス更新',
+          body: `${deal.status} から ${status} に進みました。`,
+        })
+      }
+      if (hasDocumentChecks) {
+        events = appendDealEvent({ ...deal, events }, {
+          kind: 'documents',
+          title: '書類・現車確認チェック更新',
+          body: `${documentChecks.length}件のチェック項目を保存しました。`,
+        })
+      }
+      if (hasHandoverPlan) {
+        events = appendDealEvent({ ...deal, events }, {
+          kind: 'handover',
+          title: '現車確認・引き渡し予定更新',
+          body: `${nextDeal.handoverDate || '日程未定'} / ${nextDeal.handoverPlace || '場所未定'}`,
+        })
+      }
+      nextDeal.events = events
       deals[index] = nextDeal
       await writeCollection(dealsFile, deals)
       if (hasStatus) {
@@ -903,6 +947,22 @@ const requestHandler = async (request, response) => {
       }
       const messages = await readCollection(messagesFile, [])
       await writeCollection(messagesFile, [...messages, message].slice(-1000))
+      if (message.dealId) {
+        const deals = await readCollection(dealsFile, [])
+        const dealIndex = deals.findIndex((deal) => deal.id === message.dealId)
+        if (dealIndex >= 0) {
+          deals[dealIndex] = {
+            ...deals[dealIndex],
+            events: appendDealEvent(deals[dealIndex], {
+              kind: 'message',
+              title: 'チャット送信',
+              body: `${message.senderName}: ${message.body}`,
+            }),
+            updatedAt: new Date().toISOString(),
+          }
+          await writeCollection(dealsFile, deals)
+        }
+      }
       const listings = await readCollection(listingsFile, [])
       const listing = listings.find((item) => item.id === message.vehicleId)
       const recipientId = listing?.sellerId && listing.sellerId !== message.senderId ? listing.sellerId : ''

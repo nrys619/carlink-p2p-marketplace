@@ -49,6 +49,14 @@ export type NotificationRecord = {
   createdAt: string
 }
 
+export type DealEvent = {
+  id: string
+  kind: 'created' | 'status' | 'documents' | 'handover' | 'message' | 'system'
+  title: string
+  body: string
+  createdAt: string
+}
+
 export type WizardStep = {
   label: string
   title: string
@@ -93,6 +101,7 @@ export type DealRecord = {
   handoverDate?: string
   handoverPlace?: string
   handoverMemo?: string
+  events?: DealEvent[]
   createdAt: string
   updatedAt: string
 }

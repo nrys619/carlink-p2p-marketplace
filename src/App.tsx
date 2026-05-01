@@ -146,6 +146,15 @@ const dealStatusLabels: Record<DealRecord['status'], string> = {
   cancelled: 'キャンセル',
 }
 
+const dealEventLabels = {
+  created: '申請',
+  status: '進行',
+  documents: '書類',
+  handover: '予定',
+  message: '相談',
+  system: '記録',
+} as const
+
 const inspectionCheckItems = [
   '車検証と車台番号',
   '修復歴・冠水歴',
@@ -591,6 +600,10 @@ function App() {
   const activeInspectionChecks = useMemo(
     () => selectedDeal?.documentChecks ?? inspectionChecks,
     [inspectionChecks, selectedDeal],
+  )
+  const selectedDealEvents = useMemo(
+    () => [...(selectedDeal?.events ?? [])].reverse().slice(0, 8),
+    [selectedDeal],
   )
   const displayedMessages = useMemo(
     () =>
@@ -2300,10 +2313,25 @@ function App() {
                             </span>
                           )
                         },
-                      )}
-                    </div>
-                  </div>
-                ) : (
+	                      )}
+	                    </div>
+                    {selectedDealEvents.length > 0 && (
+                      <div className="deal-event-log">
+                        <p className="eyebrow">取引ログ</p>
+                        {selectedDealEvents.map((event) => (
+                          <article key={event.id}>
+                            <span>{dealEventLabels[event.kind]}</span>
+                            <div>
+                              <strong>{event.title}</strong>
+                              <p>{event.body}</p>
+                              <small>{new Date(event.createdAt).toLocaleString('ja-JP')}</small>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+	                  </div>
+	                ) : (
                   <div className="application-form">
                     <label>
                       名前
@@ -2765,6 +2793,11 @@ function App() {
                       <p>
                         {deal.buyerName} / {yen(deal.amount)} / {dealStatusLabels[deal.status]}
                       </p>
+                      {deal.events?.length ? (
+                        <small>{deal.events[deal.events.length - 1].title}</small>
+                      ) : (
+                        <small>取引ログ未作成</small>
+                      )}
                     </div>
                     <span>{deal.id.slice(0, 8)}</span>
                     <button onClick={() => updateDealStatus(deal.id, 'payment_pending').then((updated) => {
