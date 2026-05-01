@@ -1834,6 +1834,75 @@
   cursor: pointer;
 }
 
+.application-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.application-form label {
+  display: grid;
+  gap: 6px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.application-form label.wide {
+  grid-column: 1 / -1;
+}
+
+.application-form input,
+.application-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 11px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.application-form textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.deal-record {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  border: 1px solid #d7e2e0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fbfb;
+}
+
+.deal-record span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.deal-record strong {
+  color: #0f766e;
+  font-size: 16px;
+}
+
+.deal-record p,
+.deal-message {
+  margin: 0;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.deal-message {
+  margin-bottom: 12px;
+}
+
 .cost-list {
   display: grid;
   gap: 10px;

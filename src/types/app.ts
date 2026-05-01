@@ -54,6 +54,22 @@ export type AuthUser = {
   createdAt: string
 }
 
+export type DealRecord = {
+  id: string
+  vehicleId: number
+  vehicleTitle: string
+  buyerId?: string
+  buyerName: string
+  buyerPhone: string
+  sellerId?: string
+  sellerName?: string
+  amount: number
+  status: 'inquiry' | 'applied' | 'payment_pending' | 'paid' | 'handover' | 'transfer' | 'completed' | 'cancelled'
+  note?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type PersistedAppState = {
   analysisDone: boolean
   certificateReadMethod?: 'upload' | 'electronic' | null

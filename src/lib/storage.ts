@@ -1,4 +1,4 @@
-import type { AuthUser, PersistedAppState } from '../types/app'
+import type { AuthUser, DealRecord, PersistedAppState, Vehicle } from '../types/app'
 
 export const storageKey = 'carlink-p2p-marketplace-state'
 const sessionKey = 'carlink-p2p-marketplace-session'
@@ -51,6 +51,76 @@ export async function clearRemoteState() {
     await fetch(`${apiBase}/api/state`, { method: 'DELETE' })
   } catch {
     // Local storage remains the offline fallback.
+  }
+}
+
+export async function loadListings(): Promise<Vehicle[]> {
+  try {
+    const response = await fetch(`${apiBase}/api/listings`)
+    if (!response.ok) return []
+    const payload = (await response.json()) as { listings?: Vehicle[] }
+    return payload.listings ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function saveListing(vehicle: Vehicle): Promise<Vehicle | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/listings`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listing: vehicle }),
+    })
+    if (!response.ok) return null
+    const payload = (await response.json()) as { listing?: Vehicle }
+    return payload.listing ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function loadDeals(): Promise<DealRecord[]> {
+  try {
+    const response = await fetch(`${apiBase}/api/deals`, { credentials: 'include' })
+    if (!response.ok) return []
+    const payload = (await response.json()) as { deals?: DealRecord[] }
+    return payload.deals ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function createDeal(payload: Omit<DealRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<DealRecord | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/deals`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) return null
+    const result = (await response.json()) as { deal?: DealRecord }
+    return result.deal ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function updateDealStatus(id: string, status: DealRecord['status']): Promise<DealRecord | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/deals/${id}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+    if (!response.ok) return null
+    const result = (await response.json()) as { deal?: DealRecord }
+    return result.deal ?? null
+  } catch {
+    return null
   }
 }
 

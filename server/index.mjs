@@ -11,6 +11,8 @@ const dataDir = join(rootDir, 'server-data')
 const stateFile = join(dataDir, 'state.json')
 const usersFile = join(dataDir, 'users.json')
 const sessionsFile = join(dataDir, 'sessions.json')
+const listingsFile = join(dataDir, 'listings.json')
+const dealsFile = join(dataDir, 'deals.json')
 const distDir = join(rootDir, 'dist')
 const port = Number(process.env.PORT ?? 8787)
 const isHttps = Boolean(process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH)
@@ -137,6 +139,77 @@ function validateState(state) {
   return { ok: true }
 }
 
+function sanitizeString(value, maxLength = 120) {
+  return String(value ?? '').trim().slice(0, maxLength)
+}
+
+function sanitizeNumber(value, fallback = 0) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+function sanitizeListing(input, owner) {
+  if (!isRecord(input)) return null
+  const title = sanitizeString(input.title, 80)
+  const price = sanitizeNumber(input.price)
+  if (!title || price < 50_000) return null
+  return {
+    id: sanitizeNumber(input.id, Date.now()),
+    title,
+    maker: sanitizeString(input.maker || '未設定', 40),
+    grade: sanitizeString(input.grade || '個人出品', 80),
+    year: sanitizeString(input.year || '年式未入力', 30),
+    mileage: Math.max(0, sanitizeNumber(input.mileage, 0)),
+    price,
+    location: sanitizeString(input.location || '地域未入力', 60),
+    image: sanitizeString(input.image, 1_000_000),
+    tags: Array.isArray(input.tags) ? input.tags.map((tag) => sanitizeString(tag, 28)).filter(Boolean).slice(0, 30) : [],
+    inspection: sanitizeString(input.inspection || '確認中', 40),
+    verified: Boolean(input.verified),
+    sellerId: sanitizeString(input.sellerId || owner?.id || '', 80),
+    sellerName: sanitizeString(input.sellerName || owner?.name || '個人出品者', 40),
+    description: sanitizeString(input.description || '', 600),
+    createdAt: sanitizeString(input.createdAt || new Date().toISOString(), 40),
+    updatedAt: new Date().toISOString(),
+    status: ['published', 'draft', 'paused'].includes(input.status) ? input.status : 'published',
+  }
+}
+
+function publicListingView(listing) {
+  return {
+    ...listing,
+    sellerId: listing.sellerId,
+  }
+}
+
+function sanitizeDeal(input, user) {
+  if (!isRecord(input)) return null
+  const vehicleId = sanitizeNumber(input.vehicleId)
+  const vehicleTitle = sanitizeString(input.vehicleTitle, 80)
+  const buyerName = sanitizeString(input.buyerName || user?.name, 40)
+  const buyerPhone = sanitizeString(input.buyerPhone || user?.phone, 20).replace(/[^\d+]/g, '')
+  const amount = sanitizeNumber(input.amount)
+  if (!vehicleId || !vehicleTitle || !buyerName || buyerPhone.length < 8 || amount < 50_000) return null
+  const now = new Date().toISOString()
+  return {
+    id: randomUUID(),
+    vehicleId,
+    vehicleTitle,
+    buyerId: sanitizeString(input.buyerId || user?.id || '', 80),
+    buyerName,
+    buyerPhone,
+    sellerId: sanitizeString(input.sellerId || '', 80),
+    sellerName: sanitizeString(input.sellerName || '', 40),
+    amount,
+    status: ['inquiry', 'applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed', 'cancelled'].includes(input.status)
+      ? input.status
+      : 'applied',
+    note: sanitizeString(input.note || '', 500),
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
 function sanitizeState(state) {
   if (state === null) return null
   return {
@@ -214,6 +287,8 @@ async function getReadiness() {
   const checks = []
   const state = await readState()
   const users = await readCollection(usersFile, [])
+  const listings = await readCollection(listingsFile, [])
+  const deals = await readCollection(dealsFile, [])
 
   try {
     await stat(join(distDir, 'index.html'))
@@ -259,6 +334,8 @@ async function getReadiness() {
       chatMessages: Array.isArray(state?.chatMessages) ? state.chatMessages.length : 0,
       savedSearches: Array.isArray(state?.savedSearches) ? state.savedSearches.length : 0,
       users: Array.isArray(users) ? users.length : 0,
+      listings: Array.isArray(listings) ? listings.length : 0,
+      deals: Array.isArray(deals) ? deals.length : 0,
     },
   }
 }
@@ -462,6 +539,94 @@ const requestHandler = async (request, response) => {
     if (url.pathname === '/api/state' && request.method === 'DELETE') {
       await writeState(null)
       sendJson(response, 200, { ok: true })
+      return
+    }
+
+    if (url.pathname === '/api/listings' && request.method === 'GET') {
+      const listings = await readCollection(listingsFile, [])
+      sendJson(response, 200, {
+        listings: listings
+          .filter((listing) => listing.status !== 'draft' && listing.status !== 'paused')
+          .map(publicListingView),
+      })
+      return
+    }
+
+    if (url.pathname === '/api/listings' && request.method === 'POST') {
+      const user = await getCurrentUser(request)
+      const body = await readJsonBody(request)
+      const listing = sanitizeListing(body?.listing ?? body, user)
+      if (!listing) {
+        sendJson(response, 400, { error: 'invalid listing' })
+        return
+      }
+
+      const listings = await readCollection(listingsFile, [])
+      const existingIndex = listings.findIndex((item) => item.id === listing.id)
+      const nextListing =
+        existingIndex >= 0
+          ? { ...listings[existingIndex], ...listing, createdAt: listings[existingIndex].createdAt }
+          : listing
+      const nextListings =
+        existingIndex >= 0
+          ? listings.map((item, index) => (index === existingIndex ? nextListing : item))
+          : [nextListing, ...listings]
+      await writeCollection(listingsFile, nextListings.slice(0, 500))
+      sendJson(response, 200, { listing: publicListingView(nextListing) })
+      return
+    }
+
+    if (url.pathname === '/api/deals' && request.method === 'GET') {
+      const user = await getCurrentUser(request)
+      const deals = await readCollection(dealsFile, [])
+      if (!user) {
+        sendJson(response, 200, { deals: [] })
+        return
+      }
+      sendJson(response, 200, {
+        deals: deals.filter((deal) => deal.buyerId === user.id || deal.sellerId === user.id || user.role === 'admin'),
+      })
+      return
+    }
+
+    if (url.pathname === '/api/deals' && request.method === 'POST') {
+      const user = await getCurrentUser(request)
+      const body = await readJsonBody(request)
+      const deal = sanitizeDeal(body, user)
+      if (!deal) {
+        sendJson(response, 400, { error: 'invalid deal' })
+        return
+      }
+      const deals = await readCollection(dealsFile, [])
+      await writeCollection(dealsFile, [deal, ...deals].slice(0, 500))
+      sendJson(response, 200, { deal })
+      return
+    }
+
+    if (url.pathname.startsWith('/api/deals/') && request.method === 'PATCH') {
+      const user = await getCurrentUser(request)
+      const id = url.pathname.split('/').pop()
+      const body = await readJsonBody(request)
+      const status = String(body?.status ?? '')
+      if (!['inquiry', 'applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed', 'cancelled'].includes(status)) {
+        sendJson(response, 400, { error: 'invalid status' })
+        return
+      }
+      const deals = await readCollection(dealsFile, [])
+      const index = deals.findIndex((deal) => deal.id === id)
+      if (index < 0) {
+        sendJson(response, 404, { error: 'deal not found' })
+        return
+      }
+      const deal = deals[index]
+      if (user && ![deal.buyerId, deal.sellerId].includes(user.id) && user.role !== 'admin') {
+        sendJson(response, 403, { error: 'forbidden' })
+        return
+      }
+      const nextDeal = { ...deal, status, updatedAt: new Date().toISOString() }
+      deals[index] = nextDeal
+      await writeCollection(dealsFile, deals)
+      sendJson(response, 200, { deal: nextDeal })
       return
     }
 

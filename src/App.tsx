@@ -37,16 +37,21 @@ import { aiOptions, baseVehicles, initialChat, photoSlots, scannedFields } from 
 import {
   clearPersistedState,
   clearRemoteState,
+  createDeal,
+  loadDeals,
+  loadListings,
   loadPersistedState,
   loadRemoteState,
   loadSession,
   loginUser,
   logoutUser,
+  saveListing,
   savePersistedState,
   saveRemoteState,
+  updateDealStatus,
 } from './lib/storage'
 import { currentTimeLabel, mileageLabel, yen } from './lib/format'
-import type { AuthUser, PersistedAppState, SavedSearch, Vehicle, WizardStep } from './types/app'
+import type { AuthUser, DealRecord, PersistedAppState, SavedSearch, Vehicle, WizardStep } from './types/app'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -56,7 +61,7 @@ type BeforeInstallPromptEvent = Event & {
 type ReadinessStatus = {
   ok: boolean
   checks: { key: string; label: string; ok: boolean }[]
-  state: { vehicles: number; chatMessages: number; savedSearches: number; users?: number }
+  state: { vehicles: number; chatMessages: number; savedSearches: number; users?: number; listings?: number; deals?: number }
 }
 
 type AnalysisResult = {
@@ -101,6 +106,17 @@ const dealSteps = [
   { label: '名義変更', icon: ReceiptText },
   { label: '売上入金', icon: BadgeCheck },
 ]
+
+const dealStatusLabels: Record<DealRecord['status'], string> = {
+  inquiry: '相談中',
+  applied: '購入申請済み',
+  payment_pending: '入金待ち',
+  paid: '入金確認済み',
+  handover: '車両引き渡し',
+  transfer: '名義変更中',
+  completed: '完了',
+  cancelled: 'キャンセル',
+}
 
 const inspectionCheckItems = [
   '車検証と車台番号',
@@ -269,6 +285,11 @@ function App() {
   const [authMessage, setAuthMessage] = useState('')
   const [nfcReading, setNfcReading] = useState(false)
   const [photoMessage, setPhotoMessage] = useState('')
+  const [deals, setDeals] = useState<DealRecord[]>([])
+  const [dealMessage, setDealMessage] = useState('')
+  const [buyerName, setBuyerName] = useState('')
+  const [buyerPhone, setBuyerPhone] = useState('')
+  const [buyerNote, setBuyerNote] = useState('')
   const [chatMessages, setChatMessages] = useState(savedState?.chatMessages ?? initialChat)
   const [compareIds, setCompareIds] = useState<number[]>(savedState?.compareIds ?? [])
   const [favorites, setFavorites] = useState(savedState?.favorites ?? [])
@@ -399,7 +420,23 @@ function App() {
   }, [serverSynced])
 
   useEffect(() => {
-    loadSession().then((user) => setCurrentUser(user))
+    loadSession().then((user) => {
+      setCurrentUser(user)
+      if (user) {
+        setBuyerName(user.name)
+        setBuyerPhone(user.phone)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    loadListings().then((listings) => {
+      if (listings.length > 0) {
+        setVehicles(listings)
+        setSelectedId((current) => (listings.some((vehicle) => vehicle.id === current) ? current : listings[0].id))
+      }
+    })
+    loadDeals().then((records) => setDeals(records))
   }, [])
 
   const filteredVehicles = useMemo(() => {
@@ -476,6 +513,10 @@ function App() {
   const comparedVehicles = useMemo(
     () => compareIds.map((id) => vehicles.find((vehicle) => vehicle.id === id)).filter((vehicle): vehicle is Vehicle => Boolean(vehicle)),
     [compareIds, vehicles],
+  )
+  const selectedDeal = useMemo(
+    () => deals.find((deal) => deal.vehicleId === selectedVehicle.id && deal.status !== 'cancelled') ?? null,
+    [deals, selectedVehicle.id],
   )
   const reviewQueue = useMemo(
     () =>
@@ -746,7 +787,7 @@ function App() {
     setAnalysisMessage(`下書きを保存しました (${savedAt})`)
   }
 
-  const publishListing = () => {
+  const publishListing = async () => {
     if (!currentUser) {
       setAuthMessage('掲載するにはログインしてください。')
       setAnalysisMessage('掲載するにはログインが必要です。')
@@ -790,6 +831,10 @@ function App() {
     }
 
     setVehicles((current) => [newVehicle, ...current])
+    saveListing(newVehicle).then((savedListing) => {
+      if (!savedListing) return
+      setVehicles((current) => current.map((vehicle) => (vehicle.id === newVehicle.id ? savedListing : vehicle)))
+    })
     setSelectedId(newVehicle.id)
     setPublished(true)
     setListingStep(4)
@@ -828,6 +873,53 @@ function App() {
     setMessage('')
   }
 
+  const submitPurchaseApplication = async () => {
+    const name = buyerName.trim() || currentUser?.name || ''
+    const phone = buyerPhone.trim() || currentUser?.phone || ''
+    if (!name || phone.replace(/[^\d+]/g, '').length < 8) {
+      setDealMessage('購入申請には名前と連絡先電話番号が必要です。')
+      return
+    }
+
+    setDealMessage('購入申請を送信しています。')
+    const deal = await createDeal({
+      vehicleId: selectedVehicle.id,
+      vehicleTitle: selectedVehicle.title,
+      buyerId: currentUser?.id,
+      buyerName: name,
+      buyerPhone: phone,
+      sellerId: selectedVehicle.sellerId,
+      sellerName: selectedVehicle.sellerName,
+      amount: totalPayment,
+      status: 'applied',
+      note: buyerNote,
+    })
+    if (!deal) {
+      setDealMessage('購入申請を保存できませんでした。入力内容と通信状態を確認してください。')
+      return
+    }
+    setDeals((current) => [deal, ...current.filter((item) => item.id !== deal.id)])
+    setDealProgress(Math.max(dealProgress, 1))
+    setDealMessage('購入申請を保存しました。次は売主との現車確認・書類確認へ進めます。')
+  }
+
+  const advanceSelectedDeal = async () => {
+    if (!selectedDeal) {
+      await submitPurchaseApplication()
+      return
+    }
+    const order: DealRecord['status'][] = ['applied', 'payment_pending', 'paid', 'handover', 'transfer', 'completed']
+    const nextStatus = order[Math.min(order.indexOf(selectedDeal.status) + 1, order.length - 1)] ?? 'payment_pending'
+    const updated = await updateDealStatus(selectedDeal.id, nextStatus)
+    if (!updated) {
+      setDealMessage('取引ステータスを更新できませんでした。')
+      return
+    }
+    setDeals((current) => current.map((deal) => (deal.id === updated.id ? updated : deal)))
+    setDealProgress(Math.min(dealProgress + 1, dealSteps.length))
+    setDealMessage('取引ステータスを更新しました。')
+  }
+
   const handleLogin = async () => {
     if (!loginName.trim() || !loginPhone.trim()) {
       setAuthMessage('表示名と電話番号を入力してください。')
@@ -840,6 +932,8 @@ function App() {
       return
     }
     setCurrentUser(user)
+    setBuyerName(user.name)
+    setBuyerPhone(user.phone)
     setAuthMessage('ログインしました。出品と下書き保存を利用できます。')
   }
 
@@ -1962,10 +2056,48 @@ function App() {
                 <div className="section-header compact">
                   <div>
                     <p className="eyebrow">購入申請</p>
-                    <h2>安全決済の内訳</h2>
+                    <h2>{selectedDeal ? '取引管理' : '安全決済の内訳'}</h2>
                   </div>
                   <LockKeyhole className="status-icon" size={22} />
                 </div>
+                {selectedDeal ? (
+                  <div className="deal-record">
+                    <span>申請ID {selectedDeal.id.slice(0, 8)}</span>
+                    <strong>{dealStatusLabels[selectedDeal.status]}</strong>
+                    <p>
+                      {selectedDeal.buyerName} / {yen(selectedDeal.amount)}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="application-form">
+                    <label>
+                      名前
+                      <input
+                        onChange={(event) => setBuyerName(event.target.value)}
+                        placeholder="購入者名"
+                        value={buyerName}
+                      />
+                    </label>
+                    <label>
+                      連絡先
+                      <input
+                        inputMode="tel"
+                        onChange={(event) => setBuyerPhone(event.target.value)}
+                        placeholder="電話番号"
+                        value={buyerPhone}
+                      />
+                    </label>
+                    <label className="wide">
+                      希望・メモ
+                      <textarea
+                        onChange={(event) => setBuyerNote(event.target.value)}
+                        placeholder="現車確認希望日、支払い方法、名義変更の希望など"
+                        value={buyerNote}
+                      />
+                    </label>
+                  </div>
+                )}
+                {dealMessage && <p className="deal-message">{dealMessage}</p>}
                 <dl className="cost-list">
                   <div>
                     <dt>車両本体</dt>
@@ -1986,11 +2118,11 @@ function App() {
                 </dl>
                 <button
                   className="primary-action full"
-                  onClick={() => setDealProgress(Math.min(dealProgress + 1, dealSteps.length))}
+                  onClick={advanceSelectedDeal}
                   type="button"
                 >
                   <WalletCards size={18} />
-                  取引を進める
+                  {selectedDeal ? '取引を進める' : '購入申請を作成'}
                 </button>
                 <div className="safety-checklist">
                   <p>購入前チェック</p>
@@ -2240,6 +2372,10 @@ function App() {
                 <div>
                   <span>保存条件</span>
                   <strong>{savedSearches.length}</strong>
+                </div>
+                <div>
+                  <span>購入申請</span>
+                  <strong>{readiness?.state.deals ?? deals.length}</strong>
                 </div>
               </div>
             </section>
