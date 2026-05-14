@@ -31,7 +31,7 @@ import {
   WalletCards,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { catalogMakers, catalogSource, catalogStats, findCatalogModel, getCatalogModels } from './data/catalog'
 import { aiOptions, baseVehicles, initialChat, photoSlots, scannedFields } from './data/demo'
@@ -370,6 +370,8 @@ function App() {
     savedState?.photoImages ?? emptyPhotoImages(),
   )
 
+  const chatListRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     let cancelled = false
 
@@ -468,6 +470,17 @@ function App() {
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (detailOpen) setDetailOpen(false)
+        else if (legalPanel) setLegalPanel(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [detailOpen, legalPanel])
 
   useEffect(() => {
     fetch('/api/readiness')
@@ -630,6 +643,12 @@ function App() {
     )
   }, [selectedDeal?.id, selectedVehicle])
 
+  useEffect(() => {
+    const list = chatListRef.current
+    if (!list) return
+    list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' })
+  }, [displayedMessages])
+
   const reviewQueue = useMemo(
     () =>
       vehicles.map((vehicle) => ({
@@ -663,7 +682,11 @@ function App() {
   const buyerFee = Math.round(selectedVehicle.price * 0.015)
   const totalPayment = selectedVehicle.price + buyerFee + 28000
   const loanPrincipal = Math.max(totalPayment - downPayment, 0)
-  const monthlyPayment = Math.round((loanPrincipal * 1.035) / loanMonths)
+  const loanMonthlyRate = 0.035 / 12
+  const monthlyPayment =
+    loanPrincipal === 0
+      ? 0
+      : Math.round((loanPrincipal * loanMonthlyRate) / (1 - Math.pow(1 + loanMonthlyRate, -loanMonths)))
   const transferScenario = selectedVehicle.location.startsWith('東京都')
     ? {
         label: '同一管轄想定',
@@ -1253,6 +1276,7 @@ function App() {
 
   const navigate = (view: AppView) => {
     setActiveView(view)
+    setPhotoMessage('')
     const hash =
       view === 'home'
         ? 'search'
@@ -1466,15 +1490,16 @@ function App() {
           <div className="wizard-rail">
             {listingSteps.map((step, index) => {
               const Icon = step.icon
+              const stepClass = index < listingStep ? 'done' : index === listingStep ? 'active' : ''
               return (
                 <button
-                  className={index <= listingStep ? 'active' : ''}
+                  className={stepClass}
                   key={step.label}
                   onClick={() => setListingStep(index)}
                   type="button"
                 >
                   <span>
-                    <Icon size={17} />
+                    {index < listingStep ? <Check size={15} /> : <Icon size={17} />}
                   </span>
                   {step.label}
                 </button>
@@ -1551,11 +1576,13 @@ function App() {
                 <button
                   className="ghost-button"
                   onClick={() =>
-                    listingStep === 4 ? publishListing() : setListingStep(Math.min(listingStep + 1, 4))
+                    listingStep === 4
+                      ? setListingStep(Math.max(listingStep - 1, 0))
+                      : setListingStep(Math.min(listingStep + 1, 4))
                   }
                   type="button"
                 >
-                  {listingStep === 4 ? '掲載する' : '次へ'}
+                  {listingStep === 4 ? '戻る' : '次へ'}
                 </button>
                 <button className="ghost-button" onClick={saveDraftNow} type="button">
                   <ClipboardCheck size={16} />
@@ -1725,10 +1752,10 @@ function App() {
             {listingStep === 3 && (
               <div className="price-editor">
                 <label>
-                  掲載価格
+                  <span className="price-label-row">掲載価格 <strong className="price-label-yen">{yen(draftPrice)}</strong></span>
                   <input
                     inputMode="numeric"
-                    onChange={(event) => setDraftPrice(Number(event.target.value))}
+                    onChange={(event) => setDraftPrice(Number(event.target.value.replace(/[^\d]/g, '')))}
                     value={draftPrice}
                   />
                 </label>
@@ -2274,7 +2301,7 @@ function App() {
                   </div>
                   <MessageSquareText className="status-icon" size={22} />
                 </div>
-                <div className="chat-list">
+                <div className="chat-list" ref={chatListRef}>
                   {displayedMessages.map((chat, index) => (
                     <div className={chat.from} key={`${chat.body}-${index}`}>
                       <p>{chat.body}</p>
@@ -2919,6 +2946,30 @@ function App() {
           </section>
         </div>
       )}
+
+      <nav className="bottom-nav" aria-label="ボトムナビゲーション">
+        <button className={activeView === 'home' ? 'active' : ''} onClick={() => navigate('home')} type="button">
+          <Search size={20} />
+          <span>探す</span>
+        </button>
+        <button className={activeView === 'sell' ? 'active' : ''} onClick={() => navigate('sell')} type="button">
+          <Camera size={20} />
+          <span>出品</span>
+        </button>
+        <button className={activeView === 'deal' ? 'active' : ''} onClick={() => navigate('deal')} type="button">
+          <ShieldCheck size={20} />
+          <span>取引</span>
+        </button>
+        <button className={activeView === 'message' ? 'active' : ''} onClick={() => navigate('message')} type="button">
+          <MessageSquareText size={20} />
+          <span>チャット</span>
+        </button>
+        <button className={`${activeView === 'admin' ? 'active' : ''} notification-button`} onClick={() => navigate('admin')} type="button">
+          <Bell size={20} />
+          {unreadNotifications > 0 && <span className="badge">{unreadNotifications}</span>}
+          <span>管理</span>
+        </button>
+      </nav>
 
       {legalPanel && (
         <div className="modal-backdrop" role="presentation" onClick={() => setLegalPanel(null)}>
