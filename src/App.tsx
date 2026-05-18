@@ -322,6 +322,11 @@ function App() {
   const [analysisMessage, setAnalysisMessage] = useState('')
   const [draftSavedAt, setDraftSavedAt] = useState(savedState?.lastDraftSavedAt ?? '')
   const [sortMode, setSortMode] = useState<'newest' | 'priceAsc' | 'mileageAsc'>('newest')
+  const [yearMin, setYearMin] = useState(2010)
+  const [yearMax, setYearMax] = useState(2025)
+  const [fuelTypeFilter, setFuelTypeFilter] = useState('すべて')
+  const [driveTypeFilter, setDriveTypeFilter] = useState('すべて')
+  const [accidentFilter, setAccidentFilter] = useState<'すべて' | '修復歴なし'>('すべて')
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
@@ -363,6 +368,10 @@ function App() {
   const [draftPrice, setDraftPrice] = useState(savedState?.draftPrice ?? 3180000)
   const [draftLocation, setDraftLocation] = useState(savedState?.draftLocation ?? '')
   const [draftDescription, setDraftDescription] = useState(savedState?.draftDescription ?? '')
+  const [draftFuelType, setDraftFuelType] = useState<Vehicle['fuelType']>(undefined)
+  const [draftDriveType, setDraftDriveType] = useState<Vehicle['driveType']>(undefined)
+  const [draftColor, setDraftColor] = useState('')
+  const [draftAccidentHistory, setDraftAccidentHistory] = useState<boolean | undefined>(undefined)
   const [sellerConsent, setSellerConsent] = useState(savedState?.sellerConsent ?? false)
   const [draftFields, setDraftFields] = useState<Record<string, string>>(
     savedState?.draftFields ?? Object.fromEntries(scannedFields),
@@ -526,6 +535,15 @@ function App() {
       const matchesBodyType = bodyTypeFilter === 'すべて' || bodyTypes.includes(bodyTypeFilter)
       const matchesLocation = locationFilter === 'すべて' || vehicle.location.startsWith(locationFilter)
       const matchesFavorite = !showFavoritesOnly || favorites.includes(vehicle.id)
+      const vehicleYear = parseInt(vehicle.year?.replace(/[^0-9]/g, '').slice(0, 4) ?? '2020') || 2020
+      const matchesYear = vehicleYear >= yearMin && vehicleYear <= yearMax
+      const matchesFuelType = fuelTypeFilter === 'すべて' || vehicle.fuelType === fuelTypeFilter ||
+        (fuelTypeFilter === 'ハイブリッド' && vehicle.tags.some(t => t.includes('HV') || t.includes('e-POWER') || t.includes('ハイブリッド'))) ||
+        (fuelTypeFilter === 'EV' && vehicle.tags.some(t => t.includes('EV') || t === 'リーフ')) ||
+        (fuelTypeFilter === 'PHEV' && vehicle.tags.some(t => t.includes('PHEV') || t.includes('PHV')))
+      const matchesDriveType = driveTypeFilter === 'すべて' || vehicle.driveType === driveTypeFilter ||
+        (driveTypeFilter === '4WD' && vehicle.tags.some(t => t === '4WD' || t === 'AWD' || t === 'e-4WD' || t === '4×4'))
+      const matchesAccident = accidentFilter === 'すべて' || vehicle.accidentHistory === false
       return (
         matchesQuery &&
         matchesMaker &&
@@ -533,6 +551,10 @@ function App() {
         matchesBodyType &&
         matchesLocation &&
         matchesFavorite &&
+        matchesYear &&
+        matchesFuelType &&
+        matchesDriveType &&
+        matchesAccident &&
         vehicle.price <= priceLimit * 10000 &&
         vehicle.mileage <= mileageLimit
       )
@@ -544,8 +566,11 @@ function App() {
       return b.id - a.id
     })
   }, [
+    accidentFilter,
     bodyTypeFilter,
+    driveTypeFilter,
     favorites,
+    fuelTypeFilter,
     locationFilter,
     makerFilter,
     mileageLimit,
@@ -555,6 +580,8 @@ function App() {
     showFavoritesOnly,
     sortMode,
     vehicles,
+    yearMax,
+    yearMin,
   ])
 
   const makers = useMemo(() => ['すべて', ...catalogMakers.map((maker) => maker.name)], [])
@@ -947,6 +974,10 @@ function App() {
       verified: currentUser.verified,
       sellerName: currentUser.name,
       description: draftDescription.trim() || '写真と車検証読み取り結果をもとに作成した個人出品です。現車確認後に購入申請へ進めます。',
+      fuelType: draftFuelType || undefined,
+      driveType: draftDriveType || undefined,
+      color: draftColor.trim() || undefined,
+      accidentHistory: draftAccidentHistory,
       createdAt: existingVehicle?.createdAt ?? new Date().toISOString(),
       status: 'published',
     }
@@ -986,6 +1017,10 @@ function App() {
     setDraftDescription('')
     setSelectedOptions([])
     setSellerConsent(false)
+    setDraftFuelType(undefined)
+    setDraftDriveType(undefined)
+    setDraftColor('')
+    setDraftAccidentHistory(undefined)
     setPhotoImages(emptyPhotoImages())
   }
 
@@ -1007,6 +1042,10 @@ function App() {
     setDraftPrice(vehicle.price)
     setDraftLocation(vehicle.location)
     setDraftDescription(vehicle.description ?? '')
+    setDraftFuelType(vehicle.fuelType)
+    setDraftDriveType(vehicle.driveType)
+    setDraftColor(vehicle.color ?? '')
+    setDraftAccidentHistory(vehicle.accidentHistory)
     setSelectedOptions(vehicle.tags)
     setSellerConsent(true)
     setPhotoImages([vehicle.image, '', '', ''])
@@ -1287,6 +1326,11 @@ function App() {
     setPriceLimit(350)
     setShowFavoritesOnly(false)
     setSortMode('newest')
+    setYearMin(2010)
+    setYearMax(2025)
+    setFuelTypeFilter('すべて')
+    setDriveTypeFilter('すべて')
+    setAccidentFilter('すべて')
   }
 
   const handleWizardPrimary = () => {
@@ -1774,6 +1818,49 @@ function App() {
                     value={draftDescription}
                   />
                 </label>
+                <label>
+                  燃料タイプ
+                  <select
+                    onChange={(event) => setDraftFuelType(event.target.value as Vehicle['fuelType'])}
+                    value={draftFuelType ?? ''}
+                  >
+                    <option value="">選択してください</option>
+                    {(['ガソリン', 'ハイブリッド', 'PHEV', 'EV', 'ディーゼル', 'マイルドハイブリッド'] as const).map((ft) => (
+                      <option key={ft} value={ft}>{ft}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  駆動方式
+                  <select
+                    onChange={(event) => setDraftDriveType(event.target.value as Vehicle['driveType'])}
+                    value={draftDriveType ?? ''}
+                  >
+                    <option value="">選択してください</option>
+                    {(['2WD', '4WD', 'AWD', 'e-4WD'] as const).map((dt) => (
+                      <option key={dt} value={dt}>{dt}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  ボディカラー
+                  <input
+                    onChange={(event) => setDraftColor(event.target.value)}
+                    placeholder="例: パールホワイト、ブラック"
+                    value={draftColor}
+                  />
+                </label>
+                <label>
+                  修復歴
+                  <select
+                    onChange={(event) => setDraftAccidentHistory(event.target.value === 'true' ? true : event.target.value === 'false' ? false : undefined)}
+                    value={draftAccidentHistory === true ? 'true' : draftAccidentHistory === false ? 'false' : ''}
+                  >
+                    <option value="">未回答</option>
+                    <option value="false">修復歴なし</option>
+                    <option value="true">修復歴あり</option>
+                  </select>
+                </label>
                 <div className="price-presets">
                   <button onClick={() => setDraftPrice(3040000)} type="button">
                     早く売る
@@ -1932,6 +2019,37 @@ function App() {
                       ))}
                     </select>
                   </label>
+                  <label>
+                    燃料タイプ
+                    <select onChange={(event) => setFuelTypeFilter(event.target.value)} value={fuelTypeFilter}>
+                      {['すべて', 'ガソリン', 'ハイブリッド', 'EV', 'PHEV', 'ディーゼル', 'マイルドハイブリッド'].map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    駆動方式
+                    <select onChange={(event) => setDriveTypeFilter(event.target.value)} value={driveTypeFilter}>
+                      {['すべて', '2WD', '4WD', 'AWD', 'e-4WD'].map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    修復歴
+                    <select onChange={(event) => setAccidentFilter(event.target.value as 'すべて' | '修復歴なし')} value={accidentFilter}>
+                      <option value="すべて">すべて</option>
+                      <option value="修復歴なし">修復歴なし</option>
+                    </select>
+                  </label>
+                  <label>
+                    年式（下限）
+                    <select onChange={(event) => setYearMin(Number(event.target.value))} value={yearMin}>
+                      {Array.from({ length: 16 }, (_, i) => 2010 + i).map((y) => (
+                        <option key={y} value={y}>{y}年〜</option>
+                      ))}
+                    </select>
+                  </label>
                   <button className="primary-action" type="button" onClick={() => setShowFilters(false)}>
                     <Search size={18} />
                     {filteredVehicles.length}台を表示
@@ -1941,16 +2059,21 @@ function App() {
 
               <div className="intent-chips" aria-label="よく使う検索">
                 {[
-                  { label: 'SUV', bodyType: 'SUV・クロカン', price: 350 },
-                  { label: '軽自動車', bodyType: '軽自動車', price: 220 },
-                  { label: 'ミニバン', bodyType: 'ミニバン', price: 380 },
-                  { label: '200万円以下', bodyType: 'すべて', price: 200 },
+                  { label: 'SUV', bodyType: 'SUV・クロカン', price: 350, fuel: 'すべて' },
+                  { label: '軽自動車', bodyType: '軽自動車', price: 220, fuel: 'すべて' },
+                  { label: 'ミニバン', bodyType: 'ミニバン', price: 400, fuel: 'すべて' },
+                  { label: '200万円以下', bodyType: 'すべて', price: 200, fuel: 'すべて' },
+                  { label: 'EV', bodyType: 'すべて', price: 600, fuel: 'EV' },
+                  { label: 'ハイブリッド', bodyType: 'すべて', price: 350, fuel: 'ハイブリッド' },
+                  { label: 'PHEV', bodyType: 'すべて', price: 500, fuel: 'PHEV' },
+                  { label: 'スポーツ', bodyType: 'クーペ', price: 700, fuel: 'すべて' },
                 ].map((chip) => (
                   <button
                     key={chip.label}
                     onClick={() => {
                       setBodyTypeFilter(chip.bodyType)
                       setPriceLimit(chip.price)
+                      setFuelTypeFilter(chip.fuel)
                       setShowFavoritesOnly(false)
                     }}
                     type="button"
@@ -2107,6 +2230,9 @@ function App() {
                           <span>{vehicle.year}</span>
                           <span>{mileageLabel(vehicle.mileage)}</span>
                           <span>車検 {vehicle.inspection}</span>
+                          {vehicle.fuelType && vehicle.fuelType !== 'ガソリン' && (
+                            <span className={`fuel-badge ${vehicle.fuelType === 'EV' ? 'fuel-ev' : vehicle.fuelType === 'PHEV' ? 'fuel-phev' : 'fuel-hv'}`}>{vehicle.fuelType}</span>
+                          )}
                         </div>
                         <div className="tag-row">
                           {vehicle.tags.slice(0, 4).map((tag) => (
@@ -2934,6 +3060,17 @@ function App() {
                   <MapPin size={15} />
                   {selectedVehicle.location}
                 </span>
+                {selectedVehicle.fuelType && (
+                  <span className={`fuel-badge ${selectedVehicle.fuelType === 'EV' ? 'fuel-ev' : selectedVehicle.fuelType === 'PHEV' ? 'fuel-phev' : 'fuel-hv'}`}>
+                    {selectedVehicle.fuelType}
+                  </span>
+                )}
+                {selectedVehicle.driveType && (
+                  <span>{selectedVehicle.driveType}</span>
+                )}
+                {selectedVehicle.accidentHistory === false && (
+                  <span className="no-accident">修復歴なし</span>
+                )}
               </div>
               <div className="tag-row">
                 {selectedVehicle.tags.map((tag) => (

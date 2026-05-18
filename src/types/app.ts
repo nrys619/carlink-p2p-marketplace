@@ -11,6 +11,12 @@ export type Vehicle = {
   location: string
   image: string
   images?: string[]
+  fuelType?: 'ガソリン' | 'ハイブリッド' | 'EV' | 'PHEV' | 'ディーゼル' | 'マイルドハイブリッド'
+  driveType?: '2WD' | '4WD' | 'AWD' | 'e-4WD'
+  transmission?: 'AT' | 'CVT' | 'MT' | 'DCT'
+  color?: string
+  numOwners?: number
+  accidentHistory?: boolean
   tags: string[]
   inspection: string
   verified: boolean
