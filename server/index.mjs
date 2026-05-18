@@ -3,6 +3,7 @@ import { createServer as createHttpsServer } from 'node:https'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 import { extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -20,6 +21,13 @@ const distDir = join(rootDir, 'dist')
 const port = Number(process.env.PORT ?? 8787)
 const isHttps = Boolean(process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH)
 const hasManagedTls = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL)
+
+const appSecret = process.env.SECRET_KEY ?? 'carlink-secret-change-in-production'
+
+function hashPassword(password) {
+  if (!password) return null
+  return createHmac('sha256', appSecret).update(String(password)).digest('hex')
+}
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -189,6 +197,9 @@ function sanitizeListing(input, owner) {
     createdAt: sanitizeString(input.createdAt || new Date().toISOString(), 40),
     updatedAt: new Date().toISOString(),
     status: ['published', 'draft', 'paused'].includes(input.status) ? input.status : 'published',
+    images: Array.isArray(input.images)
+      ? input.images.map((img) => sanitizeString(img, 1_000_000)).filter(Boolean).slice(0, 12)
+      : [sanitizeString(input.image, 1_000_000)].filter(Boolean),
   }
 }
 
@@ -196,6 +207,7 @@ function publicListingView(listing) {
   return {
     ...listing,
     sellerId: listing.sellerId,
+    images: Array.isArray(listing.images) ? listing.images : [listing.image].filter(Boolean),
   }
 }
 
@@ -481,6 +493,130 @@ function fallbackAnalysis(mode) {
   }
 }
 
+function getSeedListings() {
+  const now = new Date().toISOString()
+  return [
+    {
+      id: 100001,
+      sellerId: 'seed',
+      sellerName: '横浜の個人オーナー',
+      title: 'トヨタ ハリアー',
+      maker: 'トヨタ',
+      grade: 'Z レザーパッケージ',
+      year: '2021年',
+      mileage: 28000,
+      price: 3180000,
+      location: '神奈川県 横浜市',
+      image: 'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=1200&q=85',
+      images: [
+        'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=1200&q=85',
+        'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=900&q=82',
+        'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=900&q=82',
+      ],
+      tags: ['サンルーフ', 'JBL', '黒革シート', 'アダプティブクルーズ', 'ETC'],
+      inspection: '2026年9月',
+      verified: true,
+      description: '屋内保管中心。整備記録簿あり。現車確認は週末対応可能です。修復歴なし。禁煙車。',
+      status: 'published',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 100002,
+      sellerId: 'seed',
+      sellerName: '川口市の出品者',
+      title: 'ホンダ N-BOX',
+      maker: 'ホンダ',
+      grade: 'カスタム L ターボ',
+      year: '2022年',
+      mileage: 18400,
+      price: 1540000,
+      location: '埼玉県 川口市',
+      image: 'https://images.unsplash.com/photo-1590362891991-f776e747a588?auto=format&fit=crop&w=1200&q=85',
+      images: [
+        'https://images.unsplash.com/photo-1590362891991-f776e747a588?auto=format&fit=crop&w=1200&q=85',
+      ],
+      tags: ['両側電動スライド', 'ETC', 'ナビ', '禁煙車', 'バックカメラ'],
+      inspection: '2027年2月',
+      verified: true,
+      description: '街乗り中心で使用。禁煙車、タイヤ溝も十分あります。記録簿1冊あり。',
+      status: 'published',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 100003,
+      sellerId: 'seed',
+      sellerName: '世田谷区の出品者',
+      title: 'マツダ CX-5',
+      maker: 'マツダ',
+      grade: 'XD プロアクティブ',
+      year: '2020年',
+      mileage: 42600,
+      price: 2090000,
+      location: '東京都 世田谷区',
+      image: 'https://images.unsplash.com/photo-1626668893632-6f3a4466d22f?auto=format&fit=crop&w=1200&q=85',
+      images: [
+        'https://images.unsplash.com/photo-1626668893632-6f3a4466d22f?auto=format&fit=crop&w=1200&q=85',
+        'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=900&q=82',
+      ],
+      tags: ['ディーゼル', '360度カメラ', 'BOSE', 'アダプティブクルーズ', 'ブラインドスポット'],
+      inspection: '2026年12月',
+      verified: false,
+      description: '長距離移動が多め。燃費重視の方に最適。ディーゼル車ならではの力強いトルク感です。',
+      status: 'published',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 100004,
+      sellerId: 'seed',
+      sellerName: '船橋市の個人オーナー',
+      title: 'スバル レヴォーグ',
+      maker: 'スバル',
+      grade: 'GT-H EX',
+      year: '2021年',
+      mileage: 31500,
+      price: 2460000,
+      location: '千葉県 船橋市',
+      image: 'https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=1200&q=85',
+      images: [
+        'https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=1200&q=85',
+      ],
+      tags: ['アイサイト', '4WD', 'ナビ', 'ドライブレコーダー', 'シートヒーター'],
+      inspection: '2026年7月',
+      verified: true,
+      description: 'アイサイト付きで高速道路での移動が快適。主に家族でのドライブ利用。4WDで雪道も安心。',
+      status: 'published',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 100005,
+      sellerId: 'seed',
+      sellerName: '大阪市の出品者',
+      title: 'ニッサン セレナ',
+      maker: 'ニッサン',
+      grade: 'e-POWER ハイウェイスターV',
+      year: '2022年',
+      mileage: 22800,
+      price: 2980000,
+      location: '大阪府 大阪市',
+      image: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=85',
+      images: [
+        'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=85',
+      ],
+      tags: ['e-POWER', '8人乗り', '両側電動スライド', 'プロパイロット', 'フリップダウンモニター'],
+      inspection: '2027年1月',
+      verified: true,
+      description: 'ファミリー用に購入。子どもの通園・習い事送迎に活躍。e-POWERで燃費良好。',
+      status: 'published',
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]
+}
+
 function extractResponseText(payload) {
   if (typeof payload?.output_text === 'string') return payload.output_text
   const texts = []
@@ -582,27 +718,42 @@ const requestHandler = async (request, response) => {
       const body = await readJsonBody(request)
       const name = String(body?.name ?? '').trim().slice(0, 40)
       const phone = String(body?.phone ?? '').replace(/[^\d+]/g, '').slice(0, 20)
-      const role = ['seller', 'buyer', 'admin'].includes(body?.role) ? body.role : 'seller'
+      const password = String(body?.password ?? '').trim()
+      // Users cannot self-assign admin role
+      const requestedRole = ['seller', 'buyer'].includes(body?.role) ? body.role : 'buyer'
       if (!name || phone.length < 8) {
-        sendJson(response, 400, { error: 'name and phone are required' })
+        sendJson(response, 400, { error: 'お名前と電話番号を入力してください' })
         return
       }
 
       const users = await readCollection(usersFile, [])
       let user = users.find((item) => item.phone === phone)
       if (!user) {
+        // New user registration
+        const passwordHash = password ? hashPassword(password) : null
         user = {
           id: randomUUID(),
           name,
           phone,
-          role,
+          role: requestedRole,
           verified: false,
+          passwordHash,
           createdAt: new Date().toISOString(),
         }
         users.push(user)
       } else {
+        // Existing user: verify password if one is set
+        if (user.passwordHash && password && hashPassword(password) !== user.passwordHash) {
+          sendJson(response, 401, { error: 'パスワードが正しくありません' })
+          return
+        }
+        // Set password if not set yet and one provided
+        if (!user.passwordHash && password) {
+          user.passwordHash = hashPassword(password)
+        }
         user.name = name
-        user.role = role
+        // Don't allow role downgrade via login; admins stay admin
+        if (user.role !== 'admin') user.role = requestedRole
       }
       await writeCollection(usersFile, users)
 
@@ -677,17 +828,28 @@ const requestHandler = async (request, response) => {
 
     if (url.pathname === '/api/listings' && request.method === 'GET') {
       const user = await getCurrentUser(request)
-      const listings = await readCollection(listingsFile, [])
+      let listings = await readCollection(listingsFile, [])
       const scope = url.searchParams.get('scope')
       if (scope === 'mine' && user) {
         sendJson(response, 200, { listings: listings.filter((listing) => listing.sellerId === user.id).map(publicListingView) })
         return
       }
-      sendJson(response, 200, {
-        listings: listings
-          .filter((listing) => listing.status !== 'draft' && listing.status !== 'paused')
-          .map(publicListingView),
-      })
+      // Full-text search support
+      const q = (url.searchParams.get('q') ?? '').trim().toLowerCase()
+      let published = listings.filter((listing) => listing.status !== 'draft' && listing.status !== 'paused')
+      // Auto-seed when DB is empty
+      if (published.length === 0) {
+        const seeds = getSeedListings()
+        await writeCollection(listingsFile, seeds)
+        published = seeds
+      }
+      if (q) {
+        published = published.filter((listing) => {
+          const text = `${listing.title} ${listing.maker} ${listing.grade} ${listing.location} ${(listing.tags ?? []).join(' ')} ${listing.description ?? ''}`.toLowerCase()
+          return text.includes(q)
+        })
+      }
+      sendJson(response, 200, { listings: published.map(publicListingView) })
       return
     }
 
@@ -925,15 +1087,24 @@ const requestHandler = async (request, response) => {
     }
 
     if (url.pathname === '/api/messages' && request.method === 'GET') {
+      const user = await getCurrentUser(request)
       const vehicleId = Number(url.searchParams.get('vehicleId') ?? 0)
       const dealId = url.searchParams.get('dealId') ?? ''
       const messages = await readCollection(messagesFile, [])
-      sendJson(response, 200, {
-        messages: messages
-          .filter((message) => (dealId ? message.dealId === dealId : true))
-          .filter((message) => (vehicleId ? message.vehicleId === vehicleId : true))
-          .slice(-200),
-      })
+      // Find the listing to determine who is the seller
+      const listings = await readCollection(listingsFile, [])
+      const listing = vehicleId ? listings.find((item) => item.id === vehicleId) : null
+      const filtered = messages
+        .filter((message) => (dealId ? message.dealId === dealId : true))
+        .filter((message) => (vehicleId ? message.vehicleId === vehicleId : true))
+        .filter((message) => {
+          // If user is logged in, show their messages or messages for listings they own
+          if (!user) return false
+          if (user.role === 'admin') return true
+          return message.senderId === user.id || listing?.sellerId === user.id
+        })
+        .slice(-200)
+      sendJson(response, 200, { messages: filtered })
       return
     }
 

@@ -10,6 +10,7 @@ export type Vehicle = {
   price: number
   location: string
   image: string
+  images?: string[]
   tags: string[]
   inspection: string
   verified: boolean
