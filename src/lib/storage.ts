@@ -270,7 +270,7 @@ export async function loadSession(): Promise<AuthUser | null> {
   }
 }
 
-export async function loginUser(payload: { name: string; phone: string; role: AuthUser['role'] }): Promise<AuthUser | null> {
+export async function loginUser(payload: { name: string; phone: string; role: AuthUser['role']; password?: string }): Promise<AuthUser | null> {
   try {
     const response = await fetch(`${apiBase}/api/auth/login`, {
       method: 'POST',

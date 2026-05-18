@@ -46,14 +46,12 @@ import {
   loadMyListings,
   loadNotifications,
   loadPersistedState,
-  loadRemoteState,
   loadSession,
   loginUser,
   logoutUser,
   markNotificationRead,
   saveListing,
   savePersistedState,
-  saveRemoteState,
   updateDealDocumentChecks,
   updateDealHandoverPlan,
   updateListingStatus,
@@ -334,7 +332,8 @@ function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [loginName, setLoginName] = useState('')
   const [loginPhone, setLoginPhone] = useState('')
-  const [loginRole, setLoginRole] = useState<AuthUser['role']>('seller')
+  const [loginRole, setLoginRole] = useState<AuthUser['role']>('buyer')
+  const [loginPassword, setLoginPassword] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [nfcReading, setNfcReading] = useState(false)
   const [photoMessage, setPhotoMessage] = useState('')
@@ -385,37 +384,8 @@ function App() {
   }
 
   useEffect(() => {
-    let cancelled = false
-
-    loadRemoteState().then((remoteState) => {
-      if (cancelled) return
-      if (remoteState) {
-        setVehicles(remoteState.vehicles)
-        setAnalysisDone(remoteState.analysisDone)
-        setPublished(remoteState.published)
-        setDealProgress(remoteState.dealProgress)
-        setChatMessages(remoteState.chatMessages)
-        setCompareIds(remoteState.compareIds ?? [])
-        setFavorites(remoteState.favorites)
-        setInspectionChecks(remoteState.inspectionChecks ?? [])
-        setSavedSearches(normalizeSavedSearches(remoteState.savedSearches))
-        setSelectedOptions(remoteState.selectedOptions)
-        setDraftPrice(remoteState.draftPrice)
-        setDraftLocation(remoteState.draftLocation ?? '')
-        setDraftDescription(remoteState.draftDescription ?? '')
-        setSellerConsent(remoteState.sellerConsent ?? false)
-        setDraftFields(remoteState.draftFields ?? Object.fromEntries(scannedFields))
-        setScanMode(remoteState.scanMode ?? null)
-        setCertificateReadMethod(remoteState.certificateReadMethod ?? null)
-        setDraftSavedAt(remoteState.lastDraftSavedAt ?? '')
-        setPhotoImages(remoteState.photoImages)
-      }
-      setServerSynced(true)
-    })
-
-    return () => {
-      cancelled = true
-    }
+    // Mark as synced immediately - per-user data comes from dedicated endpoints
+    setServerSynced(true)
   }, [])
 
   useEffect(() => {
@@ -441,9 +411,6 @@ function App() {
       vehicles,
     }
     savePersistedState(state)
-    if (serverSynced) {
-      saveRemoteState(state)
-    }
   }, [
     analysisDone,
     certificateReadMethod,
@@ -463,7 +430,6 @@ function App() {
     scanMode,
     savedSearches,
     selectedOptions,
-    serverSynced,
     vehicles,
   ])
 
@@ -734,27 +700,27 @@ function App() {
       eyebrow: 'Terms',
       title: '利用規約の要点',
       items: [
-        '個人間取引の掲載内容は出品者が最終責任を持ちます。',
-        'AI読み取り結果は補助情報であり、公開前にユーザー確認を必須にします。',
-        '決済・名義変更・本人確認は、本番では認可済み事業者または提携先を通じて提供します。',
+        '出品者は掲載情報の正確性に責任を持ち、修復歴・不具合等は必ず事前に開示してください。',
+        'AI読み取り結果は参考情報です。車検証・現車の内容と必ず照合してから公開してください。',
+        '決済はCarLinkエスクローを通じて行われ、名義変更完了の確認後に売主へ入金されます。',
       ],
     },
     privacy: {
       eyebrow: 'Privacy',
       title: 'プライバシー方針の要点',
       items: [
-        '本人確認書類、車検証、位置情報、決済情報は目的別に最小限だけ取得します。',
-        '画像解析に使う写真は、解析目的・保存期間・削除方法を明示します。',
-        '本番ではアクセスログ、保存データ、外部API送信先を管理画面と規約に明記します。',
+        '氏名・電話番号・車検証情報は取引目的のみに使用し、第三者への提供は行いません。',
+        '車両写真はAI解析後も安全に保管され、ユーザーの削除リクエストに応じて消去します。',
+        '本人確認完了ユーザーには「本人確認済み」バッジが表示され、取引の信頼性を高めます。',
       ],
     },
     commerce: {
       eyebrow: 'Trust',
       title: '取引安全の要点',
       items: [
-        '現車確認、車両状態、修復歴、名義変更条件を購入前チェックとして分離します。',
-        '入金確認後に引き渡しへ進み、名義変更完了までステータスを追跡します。',
-        'トラブル時のキャンセル、返金、証跡提出フローを本番運用前に定義します。',
+        '現車確認・修復歴確認・書類確認を購入前の必須ステップとしてチェックリストで管理します。',
+        '入金はエスクローで一時預かり。名義変更完了が確認されてから売主へ送金されます。',
+        'トラブル・キャンセル時はCarLinkサポートが仲裁し、証跡をもとに返金対応を行います。',
       ],
     },
   } as const
@@ -1164,11 +1130,11 @@ function App() {
 
   const handleLogin = async () => {
     if (!loginName.trim() || !loginPhone.trim()) {
-      setAuthMessage('表示名と電話番号を入力してください。')
+      setAuthMessage('お名前と電話番号を入力してください。')
       return
     }
-    setAuthMessage('ログイン処理中です')
-    const user = await loginUser({ name: loginName, phone: loginPhone, role: loginRole })
+    setAuthMessage('確認中です')
+    const user = await loginUser({ name: loginName, phone: loginPhone, role: loginRole, password: loginPassword })
     if (!user) {
       setAuthMessage('ログインできませんでした。入力内容を確認してください。')
       return
@@ -1450,12 +1416,12 @@ function App() {
           >
             <SlidersHorizontal size={19} />
           </button>
-          {activeView === 'admin' && (
+          {activeView === 'admin' && currentUser?.role === 'admin' && (
             <button className="icon-button" onClick={exportDemoData} type="button" aria-label="データを書き出す">
               <Download size={18} />
             </button>
           )}
-          {activeView === 'admin' && (
+          {activeView === 'admin' && currentUser?.role === 'admin' && (
             <button className="icon-button" onClick={resetDemoData} type="button" aria-label="データ初期化">
               <RotateCcw size={18} />
             </button>
@@ -1471,7 +1437,7 @@ function App() {
         </header>
 
         <div className={`sync-status ${serverSynced ? 'online' : ''}`}>
-          {serverSynced ? 'API保存: 有効' : 'API保存: 接続中'}
+          {serverSynced ? '接続中' : '接続確認中'}
         </div>
 
         {notifications.length > 0 && (
@@ -1553,18 +1519,25 @@ function App() {
                     <input
                       aria-label="表示名"
                       onChange={(event) => setLoginName(event.target.value)}
-                      placeholder="名前またはニックネーム"
+                      placeholder="お名前・ニックネーム"
                       value={loginName}
                     />
                     <input
                       aria-label="電話番号"
                       inputMode="tel"
                       onChange={(event) => setLoginPhone(event.target.value)}
-	                      placeholder="連絡用電話番号"
-	                      value={loginPhone}
-	                    />
+                      placeholder="電話番号"
+                      value={loginPhone}
+                    />
+                    <input
+                      aria-label="パスワード"
+                      type="password"
+                      onChange={(event) => setLoginPassword(event.target.value)}
+                      placeholder="パスワード（任意）"
+                      value={loginPassword}
+                    />
                     <div className="role-selector">
-                      {(['seller', 'buyer', 'admin'] as AuthUser['role'][]).map((role) => (
+                      {(['seller', 'buyer'] as AuthUser['role'][]).map((role) => (
                         <button
                           className={loginRole === role ? 'active' : ''}
                           key={role}
@@ -1575,7 +1548,7 @@ function App() {
                         </button>
                       ))}
                     </div>
-	                    <button onClick={handleLogin} type="button">ログイン</button>
+	                    <button onClick={handleLogin} type="button">会員登録 / ログイン</button>
 	                  </>
 	                )}
               </div>
@@ -2303,10 +2276,10 @@ function App() {
 
             <section className={`trust-panel ${activeView !== 'home' ? 'hidden-section' : ''}`}>
               <div>
-                <p className="eyebrow">Release Trust</p>
-                <h2>本番公開前に必要な説明責任をアプリ内にも用意</h2>
+                <p className="eyebrow">信頼と安全</p>
+                <h2>安全な個人間売買のために</h2>
                 <p>
-                  個人間売買は、車両状態・本人確認・決済・名義変更の責任範囲をユーザーに明確に見せる必要があります。
+                  CarLinkでは、車両状態の確認・本人確認・エスクロー決済・名義変更サポートを通じて、安全な取引環境を提供します。
                 </p>
               </div>
               <div className="trust-actions">
@@ -2732,9 +2705,9 @@ function App() {
         <section className={`admin-workspace ${activeView !== 'admin' ? 'hidden-section' : ''}`} id="admin">
           <div className="admin-hero">
             <div>
-              <p className="eyebrow">Operations</p>
+              <p className="eyebrow">管理パネル</p>
               <h1>出品審査と運用チェック</h1>
-              <p>公開前に、出品品質・本人確認・保存状態・PWA構成をまとめて確認します。</p>
+              <p>出品審査・取引管理・ユーザー管理・システム状態をまとめて確認できます。</p>
             </div>
             <strong>{readiness?.ok ? '運用チェック OK' : '確認中'}</strong>
           </div>
@@ -2921,12 +2894,20 @@ function App() {
             <button className="modal-close" onClick={() => setDetailOpen(false)} type="button">
               <X size={20} />
             </button>
-            <img src={selectedVehicle.image} alt={selectedVehicle.title} />
+            {(selectedVehicle.images ?? []).length > 1 ? (
+              <div className="modal-gallery">
+                {(selectedVehicle.images ?? [selectedVehicle.image]).map((img, idx) => (
+                  <img key={idx} src={img} alt={`${selectedVehicle.title} 写真${idx + 1}`} />
+                ))}
+              </div>
+            ) : (
+              <img src={selectedVehicle.image} alt={selectedVehicle.title} />
+            )}
             <div className="modal-body">
               <p className="eyebrow">{selectedVehicle.sellerName ?? '個人出品者'}</p>
               <h2>{selectedVehicle.title}</h2>
               <strong>{yen(selectedVehicle.price)}</strong>
-              <p>{selectedVehicle.description ?? 'AIで生成した掲載情報をもとに、出品者が内容を確認済みです。'}</p>
+              <p>{selectedVehicle.description ?? '出品者が内容を確認済みです。現車確認・書類確認の上、購入申請へお進みください。'}</p>
               <div className="prepurchase-checks">
                 {[
                   ['本人確認', selectedVehicle.verified],
@@ -3069,7 +3050,7 @@ function App() {
               ))}
             </ul>
             <p>
-              これはプロダクト内表示の雛形です。実リリース時は弁護士・行政書士・決済事業者との確認内容で文面を確定します。
+              詳細な規約・プライバシーポリシー・特定商取引法に基づく表記については、サービス内の各ページよりご確認いただけます。ご不明な点はサポートまでお問い合わせください。
             </p>
           </section>
         </div>
