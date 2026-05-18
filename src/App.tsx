@@ -126,6 +126,8 @@ declare global {
 
 type AppView = 'home' | 'sell' | 'deal' | 'message' | 'admin'
 
+type Toast = { id: string; message: string; type: 'success' | 'error' | 'info' }
+
 const dealSteps = [
   { label: '本人確認', icon: UserCheck },
   { label: '購入申請', icon: ClipboardCheck },
@@ -372,6 +374,16 @@ function App() {
 
   const chatListRef = useRef<HTMLDivElement>(null)
 
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const [showFilters, setShowFilters] = useState(true)
+  const [loadingVehicles, setLoadingVehicles] = useState(true)
+
+  const showToast = (message: string, type: Toast['type'] = 'info') => {
+    const id = `${Date.now()}`
+    setToasts((current) => [...current, { id, message, type }])
+    setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), 4500)
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -505,6 +517,7 @@ function App() {
         setVehicles(listings)
         setSelectedId((current) => (listings.some((vehicle) => vehicle.id === current) ? current : listings[0].id))
       }
+      setLoadingVehicles(false)
     })
     loadDeals().then((records) => setDeals(records))
   }, [])
@@ -925,7 +938,7 @@ function App() {
   const saveDraftNow = () => {
     const savedAt = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
     setDraftSavedAt(savedAt)
-    setAnalysisMessage(`下書きを保存しました (${savedAt})`)
+    showToast(`下書きを保存しました (${savedAt})`, 'success')
   }
 
   const publishListing = async () => {
@@ -987,7 +1000,8 @@ function App() {
     setPublished(true)
     setEditingListingId(null)
     setListingStep(4)
-    setAnalysisMessage(editingListingId ? '掲載内容を更新しました。' : '掲載しました。検索画面に反映されています。')
+    setAnalysisMessage('')
+    showToast(editingListingId ? '掲載内容を更新しました。' : '掲載しました！検索画面に反映されています。', 'success')
   }
 
   const startNewListing = () => {
@@ -1042,7 +1056,9 @@ function App() {
       return
     }
     setVehicles((current) => current.map((vehicle) => (vehicle.id === vehicleId ? updated : vehicle)))
-    setAnalysisMessage(status === 'published' ? '掲載を再公開しました。' : '掲載を一時停止しました。')
+    const statusMsg = status === 'published' ? '掲載を再公開しました。' : '掲載を一時停止しました。'
+    setAnalysisMessage(statusMsg)
+    showToast(statusMsg, 'success')
     refreshNotifications()
   }
 
@@ -1104,6 +1120,7 @@ function App() {
     setDeals((current) => [deal, ...current.filter((item) => item.id !== deal.id)])
     setDealProgress(Math.max(dealProgress, 1))
     setDealMessage('購入申請を保存しました。次は売主との現車確認・書類確認へ進めます。')
+    showToast('購入申請を送信しました！', 'success')
     refreshNotifications()
   }
 
@@ -1122,6 +1139,7 @@ function App() {
     setDeals((current) => current.map((deal) => (deal.id === updated.id ? updated : deal)))
     setDealProgress(Math.min(dealProgress + 1, dealSteps.length))
     setDealMessage('取引ステータスを更新しました。')
+    showToast('取引ステータスを更新しました。', 'success')
     refreshNotifications()
   }
 
@@ -1159,6 +1177,7 @@ function App() {
     setBuyerName(user.name)
     setBuyerPhone(user.phone)
     setAuthMessage(`${authRoleLabels[user.role]}としてログインしました。`)
+    showToast(`${authRoleLabels[user.role]}としてログインしました。`, 'success')
     refreshNotifications()
   }
 
@@ -1166,6 +1185,7 @@ function App() {
     await logoutUser()
     setCurrentUser(null)
     setAuthMessage('ログアウトしました。')
+    showToast('ログアウトしました。', 'info')
   }
 
   const sendQuickMessage = (body: string) => {
@@ -1421,7 +1441,13 @@ function App() {
               value={query}
             />
           </div>
-          <button className="icon-button" type="button" aria-label="絞り込み">
+          <button
+            className={`icon-button${showFilters ? ' active-filter' : ''}`}
+            onClick={() => setShowFilters((f) => !f)}
+            type="button"
+            aria-label="絞り込み"
+            aria-expanded={showFilters}
+          >
             <SlidersHorizontal size={19} />
           </button>
           {activeView === 'admin' && (
@@ -1858,85 +1884,87 @@ function App() {
                 </button>
               </div>
 
-              <div className="carsensor-search" aria-label="検索条件">
-                <label>
-                  メーカー
-                  <select
-                    onChange={(event) => {
-                      setMakerFilter(event.target.value)
-                      setModelFilter('すべて')
-                    }}
-                    value={makerFilter}
-                  >
-                    {makers.map((maker) => (
-                      <option key={maker} value={maker}>
-                        {maker}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  車種
-                  <select onChange={(event) => setModelFilter(event.target.value)} value={modelFilter}>
-                    {models.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  価格上限
-                  <div className="range-control">
-                    <span>{priceLimit}万円まで</span>
-                    <input
-                      max="400"
-                      min="80"
-                      onChange={(event) => setPriceLimit(Number(event.target.value))}
-                      type="range"
-                      value={priceLimit}
-                    />
-                  </div>
-                </label>
-                <label>
-                  走行距離
-                  <div className="range-control">
-                    <span>{mileageLabel(mileageLimit)}まで</span>
-                    <input
-                      max="120000"
-                      min="10000"
-                      step="5000"
-                      onChange={(event) => setMileageLimit(Number(event.target.value))}
-                      type="range"
-                      value={mileageLimit}
-                    />
-                  </div>
-                </label>
-                <label>
-                  ボディタイプ
-                  <select onChange={(event) => setBodyTypeFilter(event.target.value)} value={bodyTypeFilter}>
-                    {bodyTypes.map((bodyType) => (
-                      <option key={bodyType} value={bodyType}>
-                        {bodyType}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  地域
-                  <select onChange={(event) => setLocationFilter(event.target.value)} value={locationFilter}>
-                    {locations.map((location) => (
-                      <option key={location} value={location}>
-                        {location}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button className="primary-action" type="button">
-                  <Search size={18} />
-                  {filteredVehicles.length}台を表示
-                </button>
-              </div>
+              {showFilters && (
+                <div className="carsensor-search" aria-label="検索条件">
+                  <label>
+                    メーカー
+                    <select
+                      onChange={(event) => {
+                        setMakerFilter(event.target.value)
+                        setModelFilter('すべて')
+                      }}
+                      value={makerFilter}
+                    >
+                      {makers.map((maker) => (
+                        <option key={maker} value={maker}>
+                          {maker}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    車種
+                    <select onChange={(event) => setModelFilter(event.target.value)} value={modelFilter}>
+                      {models.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    価格上限
+                    <div className="range-control">
+                      <span>{priceLimit}万円まで</span>
+                      <input
+                        max="400"
+                        min="80"
+                        onChange={(event) => setPriceLimit(Number(event.target.value))}
+                        type="range"
+                        value={priceLimit}
+                      />
+                    </div>
+                  </label>
+                  <label>
+                    走行距離
+                    <div className="range-control">
+                      <span>{mileageLabel(mileageLimit)}まで</span>
+                      <input
+                        max="120000"
+                        min="10000"
+                        step="5000"
+                        onChange={(event) => setMileageLimit(Number(event.target.value))}
+                        type="range"
+                        value={mileageLimit}
+                      />
+                    </div>
+                  </label>
+                  <label>
+                    ボディタイプ
+                    <select onChange={(event) => setBodyTypeFilter(event.target.value)} value={bodyTypeFilter}>
+                      {bodyTypes.map((bodyType) => (
+                        <option key={bodyType} value={bodyType}>
+                          {bodyType}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    地域
+                    <select onChange={(event) => setLocationFilter(event.target.value)} value={locationFilter}>
+                      {locations.map((location) => (
+                        <option key={location} value={location}>
+                          {location}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button className="primary-action" type="button" onClick={() => setShowFilters(false)}>
+                    <Search size={18} />
+                    {filteredVehicles.length}台を表示
+                  </button>
+                </div>
+              )}
 
               <div className="intent-chips" aria-label="よく使う検索">
                 {[
@@ -2054,71 +2082,89 @@ function App() {
                 参照構造: <a href={catalogSource.url}>{catalogSource.name}</a> / {catalogSource.note}
               </p>
 
-              <div className="vehicle-grid">
-                {filteredVehicles.map((vehicle) => (
-                  <article
-                    className={`vehicle-card ${selectedId === vehicle.id ? 'selected' : ''}`}
-                    key={vehicle.id}
-                    onClick={() => {
-                      setSelectedId(vehicle.id)
-                      setDetailOpen(true)
-                    }}
-                  >
-                    <div className="vehicle-photo">
-                      <img src={vehicle.image} alt={vehicle.title} />
-                      <button
-                        className={`favorite ${favorites.includes(vehicle.id) ? 'active' : ''}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          toggleFavorite(vehicle.id)
-                        }}
-                        type="button"
-                        aria-label="お気に入り"
-                      >
-                        <Heart size={17} fill={favorites.includes(vehicle.id) ? 'currentColor' : 'none'} />
-                      </button>
-                      {vehicle.verified && <span className="verified-pill">本人確認済み</span>}
-                    </div>
-                    <div className="vehicle-body">
-                      <div className="vehicle-title-row">
-                        <h3>{vehicle.title}</h3>
-                        <span>{yen(vehicle.price)}</span>
-                      </div>
-                      <p>{vehicle.grade}</p>
-                      <div className="spec-row">
-                        <span>{vehicle.year}</span>
-                        <span>{mileageLabel(vehicle.mileage)}</span>
-                        <span>車検 {vehicle.inspection}</span>
-                      </div>
-                      <div className="tag-row">
-                        {vehicle.tags.slice(0, 4).map((tag) => (
-                          <span key={tag}>{tag}</span>
-                        ))}
-                      </div>
-                      <div className="card-actions">
+              {loadingVehicles ? (
+                <div className="vehicle-grid">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="vehicle-card skeleton" aria-hidden="true" />
+                  ))}
+                </div>
+              ) : filteredVehicles.length === 0 ? (
+                <div className="empty-result">
+                  <Search size={32} />
+                  <h3>条件に合う出品がありません</h3>
+                  <p>フィルターを変えるか、条件をクリアして再検索してください。</p>
+                  <button className="primary-action" onClick={resetSearch} type="button">
+                    <RotateCcw size={16} />
+                    条件をリセット
+                  </button>
+                </div>
+              ) : (
+                <div className="vehicle-grid">
+                  {filteredVehicles.map((vehicle) => (
+                    <article
+                      className={`vehicle-card ${selectedId === vehicle.id ? 'selected' : ''}`}
+                      key={vehicle.id}
+                      onClick={() => {
+                        setSelectedId(vehicle.id)
+                        setDetailOpen(true)
+                      }}
+                    >
+                      <div className="vehicle-photo">
+                        <img src={vehicle.image} alt={vehicle.title} />
                         <button
-                          className={compareIds.includes(vehicle.id) ? 'picked' : ''}
+                          className={`favorite ${favorites.includes(vehicle.id) ? 'active' : ''}`}
                           onClick={(event) => {
                             event.stopPropagation()
-                            toggleCompare(vehicle.id)
+                            toggleFavorite(vehicle.id)
                           }}
                           type="button"
+                          aria-label="お気に入り"
                         >
-                          <Scale size={15} />
-                          比較
+                          <Heart size={17} fill={favorites.includes(vehicle.id) ? 'currentColor' : 'none'} />
                         </button>
+                        {vehicle.verified && <span className="verified-pill">本人確認済み</span>}
                       </div>
-                    </div>
-                  </article>
-                ))}
-                {filteredVehicles.length === 0 && (
-                  <div className="empty-result">
-                    <Search size={28} />
-                    <h3>この条件の個人出品はまだありません</h3>
-                    <p>車種マスターには登録済みです。出品通知や希望条件登録を追加すると、探す体験がかなり良くなります。</p>
-                  </div>
-                )}
-              </div>
+                      <div className="vehicle-body">
+                        <div className="vehicle-title-row">
+                          <h3>{vehicle.title}</h3>
+                          <span>{yen(vehicle.price)}</span>
+                        </div>
+                        <p>{vehicle.grade}</p>
+                        <div className="spec-row">
+                          <span>{vehicle.year}</span>
+                          <span>{mileageLabel(vehicle.mileage)}</span>
+                          <span>車検 {vehicle.inspection}</span>
+                        </div>
+                        <div className="tag-row">
+                          {vehicle.tags.slice(0, 4).map((tag) => (
+                            <span key={tag}>{tag}</span>
+                          ))}
+                        </div>
+                        <div className="card-seller-row">
+                          <MapPin size={11} />
+                          <span>{vehicle.location.split(' ')[0]}</span>
+                          <span className="card-dot">·</span>
+                          <UserCheck size={11} />
+                          <span>{vehicle.sellerName ?? '個人出品者'}</span>
+                        </div>
+                        <div className="card-actions">
+                          <button
+                            className={compareIds.includes(vehicle.id) ? 'picked' : ''}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleCompare(vehicle.id)
+                            }}
+                            type="button"
+                          >
+                            <Scale size={15} />
+                            比較
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
             {comparedVehicles.length > 0 && (
@@ -2934,11 +2980,22 @@ function App() {
                   className="primary-action"
                   onClick={() => {
                     setDetailOpen(false)
+                    navigate('deal')
+                  }}
+                  type="button"
+                >
+                  <ShieldCheck size={18} />
+                  取引・申請
+                </button>
+                <button
+                  className="ghost-button"
+                  onClick={() => {
+                    setDetailOpen(false)
                     navigate('message')
                   }}
                   type="button"
                 >
-                  <MessageSquareText size={18} />
+                  <MessageSquareText size={17} />
                   相談する
                 </button>
               </div>
@@ -2947,6 +3004,25 @@ function App() {
         </div>
       )}
 
+      {toasts.length > 0 && (
+        <div className="toast-stack" role="status" aria-live="polite" aria-atomic="false">
+          {toasts.map((toast) => (
+            <div key={toast.id} className={`toast toast-${toast.type}`}>
+              {toast.type === 'success' && <Check size={16} />}
+              {toast.type === 'error' && <X size={16} />}
+              {toast.type === 'info' && <Bell size={16} />}
+              <span>{toast.message}</span>
+              <button
+                onClick={() => setToasts((current) => current.filter((t) => t.id !== toast.id))}
+                aria-label="閉じる"
+                type="button"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <nav className="bottom-nav" aria-label="ボトムナビゲーション">
         <button className={activeView === 'home' ? 'active' : ''} onClick={() => navigate('home')} type="button">
           <Search size={20} />

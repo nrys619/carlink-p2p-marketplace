@@ -3295,3 +3295,156 @@
   outline-offset: 2px;
   border-color: #0f766e;
 }
+
+/* ── Toast notifications ── */
+.toast-stack {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 10px 10px 14px;
+  border-radius: 10px;
+  background: #1c2838;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+  animation: slideUp 0.22s ease;
+  pointer-events: all;
+}
+
+.toast > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast > button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.toast > button:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.toast-success { background: #0f766e; }
+.toast-error   { background: #b42318; }
+.toast-info    { background: #1c2838; }
+
+/* ── Filter button active state ── */
+.icon-button.active-filter {
+  color: #0f766e;
+  background: #e9f7f4;
+  border-color: #9ecfc8;
+}
+
+/* ── Vehicle card skeleton loading ── */
+.vehicle-card.skeleton {
+  height: 280px;
+  background: linear-gradient(90deg, #f0f4f8 25%, #e6ebf0 50%, #f0f4f8 75%);
+  background-size: 400% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  cursor: default;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ── Vehicle card seller row ── */
+.card-seller-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.card-seller-row svg {
+  flex-shrink: 0;
+  color: #97a3b0;
+}
+
+.card-seller-row span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-dot {
+  color: #c5ced8;
+  flex-shrink: 0;
+}
+
+/* ── Better empty-result ── */
+.empty-result {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 52px 24px;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.empty-result svg {
+  color: #b8c5d0;
+}
+
+.empty-result h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.empty-result p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+.empty-result .primary-action {
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .toast-stack {
+    bottom: 72px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+}
