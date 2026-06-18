@@ -11,6 +11,7 @@ const dataDir = join(rootDir, 'server-data')
 const stateFile = join(dataDir, 'state.json')
 const usersFile = join(dataDir, 'users.json')
 const sessionsFile = join(dataDir, 'sessions.json')
+const smsVerificationsFile = join(dataDir, 'sms-verifications.json')
 const listingsFile = join(dataDir, 'listings.json')
 const dealsFile = join(dataDir, 'deals.json')
 const messagesFile = join(dataDir, 'messages.json')
@@ -106,7 +107,9 @@ function userPublicView(user) {
     id: user.id,
     name: user.name,
     username: user.username,
+    email: user.email,
     phone: user.phone,
+    phoneVerified: Boolean(user.phoneVerified),
     role: user.role,
     verified: Boolean(user.verified),
     createdAt: user.createdAt,
@@ -121,6 +124,18 @@ function normalizeUsername(value) {
     .slice(0, 32)
 }
 
+function normalizeEmail(value) {
+  return String(value ?? '').trim().toLowerCase().slice(0, 120)
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function normalizePhone(value) {
+  return String(value ?? '').replace(/[^\d+]/g, '').slice(0, 20)
+}
+
 function hashPassword(password) {
   const salt = randomBytes(16).toString('hex')
   const hash = scryptSync(password, salt, 64).toString('hex')
@@ -133,6 +148,70 @@ function verifyPassword(password, storedHash) {
   const hash = scryptSync(password, salt, 64)
   const stored = Buffer.from(key, 'hex')
   return stored.length === hash.length && timingSafeEqual(stored, hash)
+}
+
+async function createSmsVerification(phone) {
+  const normalizedPhone = normalizePhone(phone)
+  if (normalizedPhone.length < 8) return null
+  const code = String(Math.floor(100000 + Math.random() * 900000))
+  const verification = {
+    id: randomUUID(),
+    phone: normalizedPhone,
+    codeHash: hashPassword(code),
+    attempts: 0,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    createdAt: new Date().toISOString(),
+  }
+  const records = await readCollection(smsVerificationsFile, [])
+  const activeRecords = records.filter((item) => item.expiresAt > Date.now() && item.phone !== normalizedPhone)
+  await writeCollection(smsVerificationsFile, [verification, ...activeRecords].slice(0, 500))
+  return { verification, code }
+}
+
+async function consumeSmsVerification({ code, phone, verificationId }) {
+  const normalizedPhone = normalizePhone(phone)
+  const records = await readCollection(smsVerificationsFile, [])
+  const record = records.find((item) => item.id === verificationId && item.phone === normalizedPhone)
+  if (!record || record.expiresAt <= Date.now() || record.attempts >= 5) return false
+  const ok = verifyPassword(String(code ?? ''), record.codeHash)
+  if (!ok) {
+    record.attempts += 1
+    await writeCollection(smsVerificationsFile, records)
+    return false
+  }
+  await writeCollection(
+    smsVerificationsFile,
+    records.filter((item) => item.id !== verificationId),
+  )
+  return true
+}
+
+async function sendSmsCode(phone, code) {
+  const sid = process.env.TWILIO_ACCOUNT_SID
+  const token = process.env.TWILIO_AUTH_TOKEN
+  const from = process.env.TWILIO_FROM_PHONE
+  if (!sid || !token || !from) {
+    return { delivery: 'preview' }
+  }
+
+  const body = new URLSearchParams({
+    Body: `CarLinkの認証コードは ${code} です。10分以内に入力してください。`,
+    From: from,
+    To: phone,
+  })
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Messages.json`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  })
+  if (!response.ok) {
+    const errorBody = await response.text()
+    throw new Error(`SMS send failed: ${response.status} ${errorBody.slice(0, 180)}`)
+  }
+  return { delivery: 'sms' }
 }
 
 async function getCurrentUser(request) {
@@ -610,15 +689,41 @@ const requestHandler = async (request, response) => {
       return
     }
 
+    if (url.pathname === '/api/auth/sms/start' && request.method === 'POST') {
+      const body = await readJsonBody(request)
+      const phone = normalizePhone(body?.phone)
+      const result = await createSmsVerification(phone)
+      if (!result) {
+        sendJson(response, 400, { error: 'valid phone is required' })
+        return
+      }
+      const sms = await sendSmsCode(result.verification.phone, result.code)
+      sendJson(response, 200, {
+        verificationId: result.verification.id,
+        expiresIn: 600,
+        delivery: sms.delivery,
+        previewCode: sms.delivery === 'preview' ? result.code : undefined,
+      })
+      return
+    }
+
     if (url.pathname === '/api/auth/register' && request.method === 'POST') {
       const body = await readJsonBody(request)
       const username = normalizeUsername(body?.username)
+      const email = normalizeEmail(body?.email)
       const password = String(body?.password ?? '')
       const name = sanitizeString(body?.name || username, 40)
-      const phone = String(body?.phone ?? '').replace(/[^\d+]/g, '').slice(0, 20)
+      const phone = normalizePhone(body?.phone)
+      const smsCode = String(body?.smsCode ?? '').trim()
+      const smsVerificationId = sanitizeString(body?.smsVerificationId, 80)
       const role = ['seller', 'buyer'].includes(body?.role) ? body.role : 'buyer'
-      if (username.length < 4 || password.length < 8 || !name) {
-        sendJson(response, 400, { error: 'username, password and display name are required' })
+      if (username.length < 4 || !isValidEmail(email) || password.length < 8 || phone.length < 8 || !name) {
+        sendJson(response, 400, { error: 'username, email, password, phone and display name are required' })
+        return
+      }
+      const phoneVerified = await consumeSmsVerification({ code: smsCode, phone, verificationId: smsVerificationId })
+      if (!phoneVerified) {
+        sendJson(response, 400, { error: 'sms verification failed' })
         return
       }
 
@@ -627,12 +732,18 @@ const requestHandler = async (request, response) => {
         sendJson(response, 409, { error: 'username already exists' })
         return
       }
+      if (users.some((item) => item.email === email)) {
+        sendJson(response, 409, { error: 'email already exists' })
+        return
+      }
       const user = {
         id: randomUUID(),
         username,
+        email,
         passwordHash: hashPassword(password),
         name,
         phone,
+        phoneVerified,
         role,
         verified: false,
         createdAt: new Date().toISOString(),
@@ -656,16 +767,20 @@ const requestHandler = async (request, response) => {
 
     if (url.pathname === '/api/auth/login' && request.method === 'POST') {
       const body = await readJsonBody(request)
-      const username = normalizeUsername(body?.username)
+      const login = String(body?.username ?? '').trim().toLowerCase()
+      const username = normalizeUsername(login)
+      const email = normalizeEmail(login)
       const password = String(body?.password ?? '')
       const role = ['seller', 'buyer', 'admin'].includes(body?.role) ? body.role : null
-      if (username.length < 4 || !password) {
-        sendJson(response, 400, { error: 'username and password are required' })
+      if (login.length < 4 || !password) {
+        sendJson(response, 400, { error: 'id or email and password are required' })
         return
       }
 
       const users = await readCollection(usersFile, [])
-      const user = users.find((item) => item.username === username && verifyPassword(password, item.passwordHash))
+      const user = users.find(
+        (item) => (item.username === username || item.email === email) && verifyPassword(password, item.passwordHash),
+      )
       if (!user) {
         sendJson(response, 401, { error: 'invalid credentials' })
         return

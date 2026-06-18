@@ -80,7 +80,9 @@ export type AuthUser = {
   id: string
   name: string
   username?: string
+  email?: string
   phone: string
+  phoneVerified?: boolean
   role: 'seller' | 'buyer' | 'admin'
   verified: boolean
   createdAt: string

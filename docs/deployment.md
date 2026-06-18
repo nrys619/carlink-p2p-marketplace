@@ -9,8 +9,10 @@ CarLink can run as a Vite PWA plus the bundled Node API server.
 - `CORS_ORIGIN=https://your-domain`
 - `OPENAI_API_KEY` for real OCR/image analysis
 - `OPENAI_VISION_MODEL=gpt-4.1-mini` or another vision-capable model
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_PHONE` for real SMS verification
 
 The app uses the OpenAI Responses API for image input when `OPENAI_API_KEY` is present. If the key is absent or the API fails, the server returns a local fallback so listing flow remains usable during development.
+SMS verification uses Twilio when all three Twilio variables are present. If they are absent, the API returns a preview code so the registration flow can still be tested.
 
 ## HTTPS
 
@@ -35,14 +37,16 @@ Then open `https://<PCのローカルIP>:8787` from a phone on the same network.
 
 ## Authentication
 
-The current implementation includes a lightweight session login:
+The current implementation includes email/ID password login, staged registration, and SMS-code phone verification:
 
+- `POST /api/auth/sms/start`
+- `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/session`
 - `POST /api/auth/logout`
 - `GET /api/users`
 
-For a real launch, replace this with phone/SMS verification, eKYC, rate limiting, passwordless login, and database-backed sessions.
+For a real launch, keep Twilio or another SMS provider configured, then add eKYC, rate limiting, password reset, email verification, and database-backed sessions.
 
 ## Electronic vehicle certificate / NFC
 
@@ -63,11 +67,11 @@ The frontend uses Web NFC when available. Web NFC support is limited, mainly And
    - Start command: `node server/index.mjs`
    - Health check path: `/api/health`
    - Instance type: Free
-4. Add `OPENAI_API_KEY` and `CORS_ORIGIN` in Render environment variables.
+4. Add `OPENAI_API_KEY`, `CORS_ORIGIN`, and Twilio SMS variables in Render environment variables.
 
 ## Railway quick start
 
 1. Push this folder to GitHub.
 2. Create a Railway project from the repository.
 3. Railway will use `railway.json` and `Dockerfile`.
-4. Add `OPENAI_API_KEY`, `CORS_ORIGIN`, and `NODE_ENV=production`.
+4. Add `OPENAI_API_KEY`, `CORS_ORIGIN`, `NODE_ENV=production`, and Twilio SMS variables.

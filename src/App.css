@@ -563,6 +563,41 @@
   box-shadow: 0 8px 18px rgba(15, 118, 110, 0.22);
 }
 
+.register-progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.register-progress span {
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d7e2e0;
+  border-radius: 6px;
+  color: #667085;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.register-progress span.active {
+  color: #0f766e;
+  border-color: #87d0c8;
+  background: #e9f7f4;
+}
+
+.sms-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #f5c56a;
+  border-radius: 8px;
+  color: #7c4a03;
+  background: #fff7df;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .login-gate-form label {
   display: grid;
   gap: 6px;

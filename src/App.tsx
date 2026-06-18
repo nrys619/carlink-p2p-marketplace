@@ -54,6 +54,7 @@ import {
   saveListing,
   savePersistedState,
   saveRemoteState,
+  startSmsVerification,
   updateDealDocumentChecks,
   updateDealHandoverPlan,
   updateListingStatus,
@@ -337,10 +338,15 @@ function App() {
   const [readiness, setReadiness] = useState<ReadinessStatus | null>(null)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authRegisterStep, setAuthRegisterStep] = useState(0)
+  const [authEmail, setAuthEmail] = useState('')
   const [authUsername, setAuthUsername] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authDisplayName, setAuthDisplayName] = useState('')
   const [authPhone, setAuthPhone] = useState('')
+  const [authSmsCode, setAuthSmsCode] = useState('')
+  const [authSmsPreviewCode, setAuthSmsPreviewCode] = useState('')
+  const [authSmsVerificationId, setAuthSmsVerificationId] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [photoMessage, setPhotoMessage] = useState('')
   const [deals, setDeals] = useState<DealRecord[]>([])
@@ -633,6 +639,7 @@ function App() {
       : requiredAuthRole === 'buyer'
         ? '購入申請の前に、購入者名と連絡先を確認します。'
         : '運営画面を開く前にログインしてください。'
+  const registrationSteps = ['メール', 'ID', 'パスワード', 'SMS認証', 'プロフィール']
   const displayedMessages = useMemo(
     () =>
       conversationMessages.length > 0
@@ -1096,7 +1103,7 @@ function App() {
   const handleLogin = async () => {
     const role = requiredAuthRole ?? 'seller'
     if (!authUsername.trim() || !authPassword) {
-      setAuthMessage('IDとパスワードを入力してください。')
+      setAuthMessage('IDまたはメールアドレスとパスワードを入力してください。')
       return
     }
     setAuthMessage(`${authRoleLabels[role]}アカウントを確認しています`)
@@ -1113,34 +1120,85 @@ function App() {
     refreshNotifications()
   }
 
-  const handleRegister = async () => {
+  const handleRegisterNext = async () => {
     if (requiredAuthRole === 'admin') {
       setAuthMessage('運営アカウントは管理者が発行します。')
       return
     }
+    if (authRegisterStep === 0) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail.trim())) {
+        setAuthMessage('有効なメールアドレスを入力してください。')
+        return
+      }
+      setAuthMessage('')
+      setAuthRegisterStep(1)
+      return
+    }
+    if (authRegisterStep === 1) {
+      if (authUsername.trim().length < 4) {
+        setAuthMessage('IDは4文字以上で入力してください。')
+        return
+      }
+      setAuthMessage('')
+      setAuthRegisterStep(2)
+      return
+    }
+    if (authRegisterStep === 2) {
+      if (authPassword.length < 8) {
+        setAuthMessage('パスワードは8文字以上で入力してください。')
+        return
+      }
+      setAuthMessage('')
+      setAuthRegisterStep(3)
+      return
+    }
+    if (authRegisterStep === 3 && !authSmsVerificationId) {
+      if (authPhone.replace(/[^\d+]/g, '').length < 8) {
+        setAuthMessage('SMSを受け取れる電話番号を入力してください。')
+        return
+      }
+      setAuthMessage('SMS認証コードを送信しています')
+      const verification = await startSmsVerification({ phone: authPhone })
+      if (!verification) {
+        setAuthMessage('SMS認証コードを送信できませんでした。電話番号を確認してください。')
+        return
+      }
+      setAuthSmsVerificationId(verification.verificationId)
+      setAuthSmsPreviewCode(verification.previewCode ?? '')
+      setAuthMessage(
+        verification.delivery === 'preview'
+          ? `SMS送信サービス未設定のため、確認コード ${verification.previewCode} を入力してください。`
+          : 'SMSで届いた6桁のコードを入力してください。',
+      )
+      return
+    }
+    if (authRegisterStep === 3) {
+      if (authSmsCode.trim().length !== 6) {
+        setAuthMessage('SMSで届いた6桁のコードを入力してください。')
+        return
+      }
+      setAuthMessage('')
+      setAuthRegisterStep(4)
+      return
+    }
     const role = requiredAuthRole === 'seller' ? 'seller' : 'buyer'
-    if (!authUsername.trim() || !authPassword || !authDisplayName.trim()) {
-      setAuthMessage('ID、パスワード、表示名を入力してください。')
-      return
-    }
-    if (authUsername.trim().length < 4) {
-      setAuthMessage('IDは4文字以上で入力してください。')
-      return
-    }
-    if (authPassword.length < 8) {
-      setAuthMessage('パスワードは8文字以上で入力してください。')
+    if (!authDisplayName.trim()) {
+      setAuthMessage('表示名を入力してください。')
       return
     }
     setAuthMessage('アカウントを作成しています')
     const user = await registerUser({
+      email: authEmail,
       username: authUsername,
       password: authPassword,
       name: authDisplayName,
       phone: authPhone,
       role,
+      smsCode: authSmsCode,
+      smsVerificationId: authSmsVerificationId,
     })
     if (!user) {
-      setAuthMessage('登録できませんでした。IDが使われている可能性があります。')
+      setAuthMessage('登録できませんでした。ID、メールアドレス、SMSコードを確認してください。')
       return
     }
     setCurrentUser(user)
@@ -1149,6 +1207,12 @@ function App() {
     setAuthMessage(`${authRoleLabels[user.role]}アカウントを作成しました。`)
     setAuthPassword('')
     refreshNotifications()
+  }
+
+  const resetRegisterFlow = () => {
+    setAuthMode('register')
+    setAuthRegisterStep(0)
+    setAuthMessage('')
   }
 
   const handleLogout = async () => {
@@ -1521,66 +1585,143 @@ function App() {
                 <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')} type="button">
                   ログイン
                 </button>
-                <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')} type="button">
+                <button className={authMode === 'register' ? 'active' : ''} onClick={resetRegisterFlow} type="button">
                   新規登録
                 </button>
               </div>
             )}
-            <label>
-              ID
-              <input
-                aria-label="ログインID"
-                autoComplete="username"
-                onChange={(event) => setAuthUsername(event.target.value)}
-                placeholder="carlink_user"
-                value={authUsername}
-              />
-            </label>
-            <label>
-              パスワード
-              <input
-                aria-label="パスワード"
-                autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
-                onChange={(event) => setAuthPassword(event.target.value)}
-                placeholder="8文字以上"
-                type="password"
-                value={authPassword}
-              />
-            </label>
-            {authMode === 'register' && requiredAuthRole !== 'admin' && (
+            {authMode === 'register' && requiredAuthRole !== 'admin' ? (
+              <>
+                <div className="register-progress" aria-label="新規登録ステップ">
+                  {registrationSteps.map((step, index) => (
+                    <span className={index <= authRegisterStep ? 'active' : ''} key={step}>
+                      {step}
+                    </span>
+                  ))}
+                </div>
+                {authRegisterStep === 0 && (
+                  <label>
+                    メールアドレス
+                    <input
+                      aria-label="メールアドレス"
+                      autoComplete="email"
+                      inputMode="email"
+                      onChange={(event) => setAuthEmail(event.target.value)}
+                      placeholder="you@example.com"
+                      value={authEmail}
+                    />
+                  </label>
+                )}
+                {authRegisterStep === 1 && (
+                  <label>
+                    ID
+                    <input
+                      aria-label="登録ID"
+                      autoComplete="username"
+                      onChange={(event) => setAuthUsername(event.target.value)}
+                      placeholder="carlink_user"
+                      value={authUsername}
+                    />
+                  </label>
+                )}
+                {authRegisterStep === 2 && (
+                  <label>
+                    パスワード
+                    <input
+                      aria-label="登録パスワード"
+                      autoComplete="new-password"
+                      onChange={(event) => setAuthPassword(event.target.value)}
+                      placeholder="8文字以上"
+                      type="password"
+                      value={authPassword}
+                    />
+                  </label>
+                )}
+                {authRegisterStep === 3 && (
+                  <>
+                    <label>
+                      SMS認証用の電話番号
+                      <input
+                        aria-label="SMS認証電話番号"
+                        autoComplete="tel"
+                        inputMode="tel"
+                        onChange={(event) => {
+                          setAuthPhone(event.target.value)
+                          setAuthSmsVerificationId('')
+                          setAuthSmsPreviewCode('')
+                          setAuthSmsCode('')
+                        }}
+                        placeholder="09012345678"
+                        value={authPhone}
+                      />
+                    </label>
+                    {authSmsVerificationId && (
+                      <label>
+                        認証コード
+                        <input
+                          aria-label="SMS認証コード"
+                          inputMode="numeric"
+                          maxLength={6}
+                          onChange={(event) => setAuthSmsCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="6桁のコード"
+                          value={authSmsCode}
+                        />
+                      </label>
+                    )}
+                    {authSmsPreviewCode && <p className="sms-preview">確認コード: {authSmsPreviewCode}</p>}
+                  </>
+                )}
+                {authRegisterStep === 4 && (
+                  <label>
+                    表示名
+                    <input
+                      aria-label="表示名"
+                      autoComplete="name"
+                      onChange={(event) => setAuthDisplayName(event.target.value)}
+                      placeholder={requiredAuthRole === 'seller' ? '出品者名' : 'ニックネーム'}
+                      value={authDisplayName}
+                    />
+                  </label>
+                )}
+              </>
+            ) : (
               <>
                 <label>
-                  表示名
+                  IDまたはメールアドレス
                   <input
-                    aria-label="表示名"
-                    autoComplete="name"
-                    onChange={(event) => setAuthDisplayName(event.target.value)}
-                    placeholder={requiredAuthRole === 'seller' ? '出品者名' : 'ニックネーム'}
-                    value={authDisplayName}
+                    aria-label="ログインID"
+                    autoComplete="username"
+                    onChange={(event) => setAuthUsername(event.target.value)}
+                    placeholder="carlink_user または you@example.com"
+                    value={authUsername}
                   />
                 </label>
                 <label>
-                  連絡用電話番号
+                  パスワード
                   <input
-                    aria-label="登録電話番号"
-                    autoComplete="tel"
-                    inputMode="tel"
-                    onChange={(event) => setAuthPhone(event.target.value)}
-                    placeholder="任意。購入申請時にも入力できます"
-                    value={authPhone}
+                    aria-label="パスワード"
+                    autoComplete="current-password"
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                    placeholder="パスワード"
+                    type="password"
+                    value={authPassword}
                   />
                 </label>
               </>
             )}
             <button
               className="primary-action full"
-              onClick={authMode === 'register' && requiredAuthRole !== 'admin' ? handleRegister : handleLogin}
+              onClick={authMode === 'register' && requiredAuthRole !== 'admin' ? handleRegisterNext : handleLogin}
               type="button"
             >
               {authMode === 'register' && requiredAuthRole !== 'admin'
-                ? requiredAuthRole === 'seller'
-                  ? '登録して出品する'
-                  : '登録して購入申請へ'
+                ? authRegisterStep < 4
+                  ? authRegisterStep === 3 && !authSmsVerificationId
+                    ? 'SMS認証コードを送る'
+                    : '次へ'
+                  : requiredAuthRole === 'seller'
+                    ? '登録して出品する'
+                    : '登録して購入申請へ'
                 : requiredAuthRole === 'seller'
                   ? 'ログインして出品する'
                   : requiredAuthRole === 'buyer'

@@ -271,10 +271,13 @@ export async function loadSession(): Promise<AuthUser | null> {
 }
 
 export async function registerUser(payload: {
+  email: string
   name: string
   password: string
-  phone?: string
+  phone: string
   role: Exclude<AuthUser['role'], 'admin'>
+  smsCode: string
+  smsVerificationId: string
   username: string
 }): Promise<AuthUser | null> {
   try {
@@ -288,6 +291,31 @@ export async function registerUser(payload: {
     const result = (await response.json()) as { user?: AuthUser }
     if (result.user) saveLocalSession(result.user)
     return result.user ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function startSmsVerification(payload: { phone: string }): Promise<{
+  delivery: 'sms' | 'preview'
+  expiresIn: number
+  previewCode?: string
+  verificationId: string
+} | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/auth/sms/start`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) return null
+    return (await response.json()) as {
+      delivery: 'sms' | 'preview'
+      expiresIn: number
+      previewCode?: string
+      verificationId: string
+    }
   } catch {
     return null
   }
