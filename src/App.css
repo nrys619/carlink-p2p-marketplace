@@ -489,6 +489,75 @@
   background: #e9f7f4;
 }
 
+.login-gate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.65fr);
+  gap: 18px;
+  align-items: stretch;
+  margin-bottom: 18px;
+}
+
+.login-gate-copy,
+.login-gate-form {
+  border: 1px solid #d7e2e0;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.06);
+}
+
+.login-gate-copy {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  min-height: 260px;
+  padding: 28px;
+}
+
+.login-gate-copy svg {
+  color: #0f766e;
+}
+
+.login-gate-copy h1 {
+  margin: 0;
+  color: #172036;
+  font-size: 30px;
+}
+
+.login-gate-copy p:not(.eyebrow) {
+  max-width: 620px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.login-gate-form {
+  display: grid;
+  gap: 12px;
+  align-content: center;
+  padding: 22px;
+}
+
+.login-gate-form label {
+  display: grid;
+  gap: 6px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.login-gate-form input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #172036;
+  background: #ffffff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -643,26 +712,6 @@
   cursor: pointer;
 }
 
-.role-selector {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.role-selector button {
-  min-height: 34px;
-  padding: 0 7px;
-  color: #314153;
-  background: #ffffff;
-  border: 1px solid var(--line);
-}
-
-.role-selector button.active {
-  color: #ffffff;
-  background: #0f766e;
-  border-color: #0f766e;
-}
-
 .seller-mini-status {
   display: flex;
   align-items: center;
@@ -700,7 +749,6 @@
 }
 
 .wizard-copy .auth-card.compact input,
-.wizard-copy .auth-card.compact .role-selector,
 .wizard-copy .auth-card.compact button {
   grid-column: 1 / -1;
 }
@@ -3152,9 +3200,19 @@
 
   .hero-band,
   .detail-strip,
-  .sell-hero {
+  .sell-hero,
+  .login-gate {
     align-items: start;
     grid-template-columns: 1fr;
+  }
+
+  .login-gate-copy {
+    min-height: 190px;
+    padding: 22px;
+  }
+
+  .login-gate-copy h1 {
+    font-size: 26px;
   }
 
   .sell-hero {

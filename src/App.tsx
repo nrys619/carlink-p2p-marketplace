@@ -160,6 +160,12 @@ const authRoleLabels: Record<AuthUser['role'], string> = {
   admin: '運営',
 }
 
+const protectedViewRoles: Partial<Record<AppView, AuthUser['role']>> = {
+  sell: 'seller',
+  deal: 'buyer',
+  admin: 'admin',
+}
+
 const inspectionCheckItems = [
   '車検証と車台番号',
   '修復歴・冠水歴',
@@ -331,7 +337,6 @@ function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [loginName, setLoginName] = useState('')
   const [loginPhone, setLoginPhone] = useState('')
-  const [loginRole, setLoginRole] = useState<AuthUser['role']>('seller')
   const [authMessage, setAuthMessage] = useState('')
   const [photoMessage, setPhotoMessage] = useState('')
   const [deals, setDeals] = useState<DealRecord[]>([])
@@ -610,6 +615,20 @@ function App() {
     () => [...(selectedDeal?.events ?? [])].reverse().slice(0, 8),
     [selectedDeal],
   )
+  const requiredAuthRole = protectedViewRoles[activeView] ?? null
+  const authGateVisible = Boolean(requiredAuthRole && currentUser?.role !== requiredAuthRole)
+  const authGateTitle =
+    requiredAuthRole === 'seller'
+      ? '出品者ログイン'
+      : requiredAuthRole === 'buyer'
+        ? '購入者ログイン'
+        : '運営ログイン'
+  const authGateBody =
+    requiredAuthRole === 'seller'
+      ? '出品を始める前に、出品者名と連絡先を確認します。'
+      : requiredAuthRole === 'buyer'
+        ? '購入申請の前に、購入者名と連絡先を確認します。'
+        : '運営画面を開く前にログインしてください。'
   const displayedMessages = useMemo(
     () =>
       conversationMessages.length > 0
@@ -998,6 +1017,11 @@ function App() {
   }
 
   const submitPurchaseApplication = async () => {
+    if (!currentUser) {
+      setActiveView('deal')
+      setAuthMessage('購入申請にはログインが必要です。')
+      return
+    }
     const name = buyerName.trim() || currentUser?.name || ''
     const phone = buyerPhone.trim() || currentUser?.phone || ''
     if (!name || phone.replace(/[^\d+]/g, '').length < 8) {
@@ -1067,11 +1091,12 @@ function App() {
 
   const handleLogin = async () => {
     if (!loginName.trim() || !loginPhone.trim()) {
-      setAuthMessage('表示名と電話番号を入力してください。')
+      setAuthMessage('名前と電話番号を入力してください。')
       return
     }
-    setAuthMessage('ログイン処理中です')
-    const user = await loginUser({ name: loginName, phone: loginPhone, role: loginRole })
+    const role = requiredAuthRole ?? 'seller'
+    setAuthMessage(`${authRoleLabels[role]}情報を確認しています`)
+    const user = await loginUser({ name: loginName, phone: loginPhone, role })
     if (!user) {
       setAuthMessage('ログインできませんでした。入力内容を確認してください。')
       return
@@ -1440,8 +1465,46 @@ function App() {
           </div>
         </section>
 
+        <section className={`login-gate ${!authGateVisible ? 'hidden-section' : ''}`} aria-label="ログイン">
+          <div className="login-gate-copy">
+            <LockKeyhole size={28} />
+            <p className="eyebrow">Login</p>
+            <h1>{authGateTitle}</h1>
+            <p>{authGateBody}</p>
+          </div>
+          <div className="login-gate-form">
+            <label>
+              {requiredAuthRole === 'seller' ? '出品者名' : requiredAuthRole === 'buyer' ? '購入者名' : '表示名'}
+              <input
+                aria-label="ログイン名"
+                onChange={(event) => setLoginName(event.target.value)}
+                placeholder={requiredAuthRole === 'seller' ? '出品者名' : '名前またはニックネーム'}
+                value={loginName}
+              />
+            </label>
+            <label>
+              連絡用電話番号
+              <input
+                aria-label="ログイン電話番号"
+                inputMode="tel"
+                onChange={(event) => setLoginPhone(event.target.value)}
+                placeholder="09012345678"
+                value={loginPhone}
+              />
+            </label>
+            <button className="primary-action full" onClick={handleLogin} type="button">
+              {requiredAuthRole === 'seller'
+                ? 'ログインして出品する'
+                : requiredAuthRole === 'buyer'
+                  ? 'ログインして購入申請へ'
+                  : 'ログイン'}
+            </button>
+            {authMessage && <p className="draft-status">{authMessage}</p>}
+          </div>
+        </section>
+
         <section
-          className={`listing-wizard ${activeView !== 'sell' ? 'hidden-section' : ''}`}
+          className={`listing-wizard ${activeView !== 'sell' || authGateVisible ? 'hidden-section' : ''}`}
           aria-label="出品ウィザード"
           id="list"
         >
@@ -1469,48 +1532,11 @@ function App() {
               <p className="eyebrow">出品ウィザード</p>
               <h2>{currentWizard.title}</h2>
               <p>{currentWizard.body}</p>
-              <div className={`auth-card compact ${currentUser ? 'logged-in' : ''}`}>
-	                {currentUser ? (
-	                  <>
-	                    <UserCheck size={18} />
-                    <span>
-                      {currentUser.name} / {authRoleLabels[currentUser.role]}
-                    </span>
-	                    <button onClick={handleLogout} type="button">ログアウト</button>
-	                  </>
-	                ) : (
-                  <>
-                    <LockKeyhole size={18} />
-                    <input
-                      aria-label="表示名"
-                      onChange={(event) => setLoginName(event.target.value)}
-                      placeholder="名前またはニックネーム"
-                      value={loginName}
-                    />
-                    <input
-                      aria-label="電話番号"
-                      inputMode="tel"
-                      onChange={(event) => setLoginPhone(event.target.value)}
-	                      placeholder="連絡用電話番号"
-	                      value={loginPhone}
-	                    />
-                    <div className="role-selector">
-                      {(['seller', 'buyer', 'admin'] as AuthUser['role'][]).map((role) => (
-                        <button
-                          className={loginRole === role ? 'active' : ''}
-                          key={role}
-                          onClick={() => setLoginRole(role)}
-                          type="button"
-                        >
-                          {authRoleLabels[role]}
-                        </button>
-                      ))}
-                    </div>
-	                    <button onClick={handleLogin} type="button">ログイン</button>
-	                  </>
-	                )}
+              <div className="auth-card compact logged-in">
+                <UserCheck size={18} />
+                <span>{currentUser?.name} / 出品者</span>
+                <button onClick={handleLogout} type="button">ログアウト</button>
               </div>
-              {authMessage && <p className="draft-status">{authMessage}</p>}
               {currentUser && (
                 <div className="seller-mini-status">
                   <span>{editingListingId ? '掲載を編集中' : `自分の掲載 ${myListings.length}台`}</span>
@@ -2225,7 +2251,7 @@ function App() {
 
             <section
               className={`deal-workspace ${
-                activeView !== 'message' && activeView !== 'deal' ? 'hidden-section' : ''
+                activeView !== 'message' && activeView !== 'deal' ? 'hidden-section' : activeView === 'deal' && authGateVisible ? 'hidden-section' : ''
               }`}
               id="message"
             >
@@ -2457,7 +2483,7 @@ function App() {
             </section>
           </div>
 
-          <aside className={`assist-column ${activeView !== 'sell' ? 'hidden-section' : ''}`}>
+          <aside className={`assist-column ${activeView !== 'sell' || authGateVisible ? 'hidden-section' : ''}`}>
             <section className="assistant-card">
               <div className="section-header compact">
                 <div>
@@ -2619,7 +2645,7 @@ function App() {
           </aside>
         </section>
 
-        <section className={`admin-workspace ${activeView !== 'admin' ? 'hidden-section' : ''}`} id="admin">
+        <section className={`admin-workspace ${activeView !== 'admin' || authGateVisible ? 'hidden-section' : ''}`} id="admin">
           <div className="admin-hero">
             <div>
               <p className="eyebrow">Operations</p>
