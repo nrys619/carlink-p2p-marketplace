@@ -50,6 +50,7 @@ import {
   loginUser,
   logoutUser,
   markNotificationRead,
+  registerUser,
   saveListing,
   savePersistedState,
   saveRemoteState,
@@ -335,8 +336,11 @@ function App() {
   const [serverSynced, setServerSynced] = useState(false)
   const [readiness, setReadiness] = useState<ReadinessStatus | null>(null)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
-  const [loginName, setLoginName] = useState('')
-  const [loginPhone, setLoginPhone] = useState('')
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authUsername, setAuthUsername] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authDisplayName, setAuthDisplayName] = useState('')
+  const [authPhone, setAuthPhone] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [photoMessage, setPhotoMessage] = useState('')
   const [deals, setDeals] = useState<DealRecord[]>([])
@@ -484,7 +488,7 @@ function App() {
       setCurrentUser(user)
       if (user) {
         setBuyerName(user.name)
-        setBuyerPhone(user.phone)
+        setBuyerPhone(user.phone ?? '')
       }
     })
   }, [])
@@ -1090,21 +1094,60 @@ function App() {
   }
 
   const handleLogin = async () => {
-    if (!loginName.trim() || !loginPhone.trim()) {
-      setAuthMessage('名前と電話番号を入力してください。')
+    const role = requiredAuthRole ?? 'seller'
+    if (!authUsername.trim() || !authPassword) {
+      setAuthMessage('IDとパスワードを入力してください。')
       return
     }
-    const role = requiredAuthRole ?? 'seller'
-    setAuthMessage(`${authRoleLabels[role]}情報を確認しています`)
-    const user = await loginUser({ name: loginName, phone: loginPhone, role })
+    setAuthMessage(`${authRoleLabels[role]}アカウントを確認しています`)
+    const user = await loginUser({ username: authUsername, password: authPassword, role })
     if (!user) {
-      setAuthMessage('ログインできませんでした。入力内容を確認してください。')
+      setAuthMessage('IDまたはパスワードが違います。新規の場合は登録してください。')
       return
     }
     setCurrentUser(user)
     setBuyerName(user.name)
-    setBuyerPhone(user.phone)
+    setBuyerPhone(user.phone ?? '')
     setAuthMessage(`${authRoleLabels[user.role]}としてログインしました。`)
+    setAuthPassword('')
+    refreshNotifications()
+  }
+
+  const handleRegister = async () => {
+    if (requiredAuthRole === 'admin') {
+      setAuthMessage('運営アカウントは管理者が発行します。')
+      return
+    }
+    const role = requiredAuthRole === 'seller' ? 'seller' : 'buyer'
+    if (!authUsername.trim() || !authPassword || !authDisplayName.trim()) {
+      setAuthMessage('ID、パスワード、表示名を入力してください。')
+      return
+    }
+    if (authUsername.trim().length < 4) {
+      setAuthMessage('IDは4文字以上で入力してください。')
+      return
+    }
+    if (authPassword.length < 8) {
+      setAuthMessage('パスワードは8文字以上で入力してください。')
+      return
+    }
+    setAuthMessage('アカウントを作成しています')
+    const user = await registerUser({
+      username: authUsername,
+      password: authPassword,
+      name: authDisplayName,
+      phone: authPhone,
+      role,
+    })
+    if (!user) {
+      setAuthMessage('登録できませんでした。IDが使われている可能性があります。')
+      return
+    }
+    setCurrentUser(user)
+    setBuyerName(user.name)
+    setBuyerPhone(user.phone ?? '')
+    setAuthMessage(`${authRoleLabels[user.role]}アカウントを作成しました。`)
+    setAuthPassword('')
     refreshNotifications()
   }
 
@@ -1473,31 +1516,76 @@ function App() {
             <p>{authGateBody}</p>
           </div>
           <div className="login-gate-form">
+            {requiredAuthRole !== 'admin' && (
+              <div className="auth-switch" aria-label="認証方法">
+                <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')} type="button">
+                  ログイン
+                </button>
+                <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')} type="button">
+                  新規登録
+                </button>
+              </div>
+            )}
             <label>
-              {requiredAuthRole === 'seller' ? '出品者名' : requiredAuthRole === 'buyer' ? '購入者名' : '表示名'}
+              ID
               <input
-                aria-label="ログイン名"
-                onChange={(event) => setLoginName(event.target.value)}
-                placeholder={requiredAuthRole === 'seller' ? '出品者名' : '名前またはニックネーム'}
-                value={loginName}
+                aria-label="ログインID"
+                autoComplete="username"
+                onChange={(event) => setAuthUsername(event.target.value)}
+                placeholder="carlink_user"
+                value={authUsername}
               />
             </label>
             <label>
-              連絡用電話番号
+              パスワード
               <input
-                aria-label="ログイン電話番号"
-                inputMode="tel"
-                onChange={(event) => setLoginPhone(event.target.value)}
-                placeholder="09012345678"
-                value={loginPhone}
+                aria-label="パスワード"
+                autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="8文字以上"
+                type="password"
+                value={authPassword}
               />
             </label>
-            <button className="primary-action full" onClick={handleLogin} type="button">
-              {requiredAuthRole === 'seller'
-                ? 'ログインして出品する'
-                : requiredAuthRole === 'buyer'
-                  ? 'ログインして購入申請へ'
-                  : 'ログイン'}
+            {authMode === 'register' && requiredAuthRole !== 'admin' && (
+              <>
+                <label>
+                  表示名
+                  <input
+                    aria-label="表示名"
+                    autoComplete="name"
+                    onChange={(event) => setAuthDisplayName(event.target.value)}
+                    placeholder={requiredAuthRole === 'seller' ? '出品者名' : 'ニックネーム'}
+                    value={authDisplayName}
+                  />
+                </label>
+                <label>
+                  連絡用電話番号
+                  <input
+                    aria-label="登録電話番号"
+                    autoComplete="tel"
+                    inputMode="tel"
+                    onChange={(event) => setAuthPhone(event.target.value)}
+                    placeholder="任意。購入申請時にも入力できます"
+                    value={authPhone}
+                  />
+                </label>
+              </>
+            )}
+            <button
+              className="primary-action full"
+              onClick={authMode === 'register' && requiredAuthRole !== 'admin' ? handleRegister : handleLogin}
+              type="button"
+            >
+              {authMode === 'register' && requiredAuthRole !== 'admin'
+                ? requiredAuthRole === 'seller'
+                  ? '登録して出品する'
+                  : '登録して購入申請へ'
+                : requiredAuthRole === 'seller'
+                  ? 'ログインして出品する'
+                  : requiredAuthRole === 'buyer'
+                    ? 'ログインして購入申請へ'
+                    : 'ログイン'}
             </button>
             {authMessage && <p className="draft-status">{authMessage}</p>}
           </div>

@@ -270,7 +270,30 @@ export async function loadSession(): Promise<AuthUser | null> {
   }
 }
 
-export async function loginUser(payload: { name: string; phone: string; role: AuthUser['role'] }): Promise<AuthUser | null> {
+export async function registerUser(payload: {
+  name: string
+  password: string
+  phone?: string
+  role: Exclude<AuthUser['role'], 'admin'>
+  username: string
+}): Promise<AuthUser | null> {
+  try {
+    const response = await fetch(`${apiBase}/api/auth/register`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) return null
+    const result = (await response.json()) as { user?: AuthUser }
+    if (result.user) saveLocalSession(result.user)
+    return result.user ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function loginUser(payload: { password: string; role: AuthUser['role']; username: string }): Promise<AuthUser | null> {
   try {
     const response = await fetch(`${apiBase}/api/auth/login`, {
       method: 'POST',
@@ -278,14 +301,12 @@ export async function loginUser(payload: { name: string; phone: string; role: Au
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    if (!response.ok) return createLocalSession(payload)
+    if (!response.ok) return null
     const result = (await response.json()) as { user?: AuthUser }
-    if (result.user) {
-      saveLocalSession(result.user)
-    }
-    return result.user ?? createLocalSession(payload)
+    if (result.user) saveLocalSession(result.user)
+    return result.user ?? null
   } catch {
-    return createLocalSession(payload)
+    return null
   }
 }
 
@@ -319,17 +340,4 @@ function saveLocalSession(user: AuthUser) {
 function clearLocalSession() {
   if (typeof window === 'undefined') return
   window.localStorage.removeItem(sessionKey)
-}
-
-function createLocalSession(payload: { name: string; phone: string; role: AuthUser['role'] }) {
-  const user: AuthUser = {
-    id: `local-${Date.now()}`,
-    name: payload.name.trim() || '出品者',
-    phone: payload.phone.trim(),
-    role: payload.role,
-    verified: false,
-    createdAt: new Date().toISOString(),
-  }
-  saveLocalSession(user)
-  return user
 }

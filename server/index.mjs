@@ -2,7 +2,7 @@ import { createServer as createHttpServer } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
 import { extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -105,11 +105,34 @@ function userPublicView(user) {
   return {
     id: user.id,
     name: user.name,
+    username: user.username,
     phone: user.phone,
     role: user.role,
     verified: Boolean(user.verified),
     createdAt: user.createdAt,
   }
+}
+
+function normalizeUsername(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, '')
+    .slice(0, 32)
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex')
+  const hash = scryptSync(password, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
+
+function verifyPassword(password, storedHash) {
+  const [salt, key] = String(storedHash ?? '').split(':')
+  if (!salt || !key) return false
+  const hash = scryptSync(password, salt, 64)
+  const stored = Buffer.from(key, 'hex')
+  return stored.length === hash.length && timingSafeEqual(stored, hash)
 }
 
 async function getCurrentUser(request) {
@@ -587,30 +610,67 @@ const requestHandler = async (request, response) => {
       return
     }
 
-    if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+    if (url.pathname === '/api/auth/register' && request.method === 'POST') {
       const body = await readJsonBody(request)
-      const name = String(body?.name ?? '').trim().slice(0, 40)
+      const username = normalizeUsername(body?.username)
+      const password = String(body?.password ?? '')
+      const name = sanitizeString(body?.name || username, 40)
       const phone = String(body?.phone ?? '').replace(/[^\d+]/g, '').slice(0, 20)
-      const role = ['seller', 'buyer', 'admin'].includes(body?.role) ? body.role : 'seller'
-      if (!name || phone.length < 8) {
-        sendJson(response, 400, { error: 'name and phone are required' })
+      const role = ['seller', 'buyer'].includes(body?.role) ? body.role : 'buyer'
+      if (username.length < 4 || password.length < 8 || !name) {
+        sendJson(response, 400, { error: 'username, password and display name are required' })
         return
       }
 
       const users = await readCollection(usersFile, [])
-      let user = users.find((item) => item.phone === phone)
+      if (users.some((item) => item.username === username)) {
+        sendJson(response, 409, { error: 'username already exists' })
+        return
+      }
+      const user = {
+        id: randomUUID(),
+        username,
+        passwordHash: hashPassword(password),
+        name,
+        phone,
+        role,
+        verified: false,
+        createdAt: new Date().toISOString(),
+      }
+      users.push(user)
+      await writeCollection(usersFile, users)
+
+      const sid = randomUUID()
+      const sessions = await readCollection(sessionsFile, {})
+      sessions[sid] = user.id
+      await writeCollection(sessionsFile, sessions)
+      const secureCookie = isHttps || hasManagedTls ? '; Secure' : ''
+      sendJsonWithCookie(
+        response,
+        200,
+        { user: userPublicView(user) },
+        `carlink_session=${encodeURIComponent(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secureCookie}`,
+      )
+      return
+    }
+
+    if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+      const body = await readJsonBody(request)
+      const username = normalizeUsername(body?.username)
+      const password = String(body?.password ?? '')
+      const role = ['seller', 'buyer', 'admin'].includes(body?.role) ? body.role : null
+      if (username.length < 4 || !password) {
+        sendJson(response, 400, { error: 'username and password are required' })
+        return
+      }
+
+      const users = await readCollection(usersFile, [])
+      const user = users.find((item) => item.username === username && verifyPassword(password, item.passwordHash))
       if (!user) {
-        user = {
-          id: randomUUID(),
-          name,
-          phone,
-          role,
-          verified: false,
-          createdAt: new Date().toISOString(),
-        }
-        users.push(user)
-      } else {
-        user.name = name
+        sendJson(response, 401, { error: 'invalid credentials' })
+        return
+      }
+      if (role && user.role !== 'admin') {
         user.role = role
       }
       await writeCollection(usersFile, users)

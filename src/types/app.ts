@@ -79,6 +79,7 @@ export type SavedSearch = {
 export type AuthUser = {
   id: string
   name: string
+  username?: string
   phone: string
   role: 'seller' | 'buyer' | 'admin'
   verified: boolean
