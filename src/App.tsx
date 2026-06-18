@@ -16,7 +16,6 @@ import {
   LockKeyhole,
   MapPin,
   MessageSquareText,
-  Nfc,
   PenLine,
   ReceiptText,
   RotateCcw,
@@ -334,7 +333,6 @@ function App() {
   const [loginPhone, setLoginPhone] = useState('')
   const [loginRole, setLoginRole] = useState<AuthUser['role']>('seller')
   const [authMessage, setAuthMessage] = useState('')
-  const [nfcReading, setNfcReading] = useState(false)
   const [photoMessage, setPhotoMessage] = useState('')
   const [deals, setDeals] = useState<DealRecord[]>([])
   const [dealMessage, setDealMessage] = useState('')
@@ -688,11 +686,6 @@ function App() {
     if (!sellerConsent) issues.push('確認同意')
     return issues
   }, [draftFields, draftLocation, draftPrice, photoImages, selectedOptions, sellerConsent])
-  const runtimeCapabilities = {
-    camera: typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices),
-    nfc: typeof window !== 'undefined' && Boolean(window.NDEFReader),
-    secure: typeof window !== 'undefined' && window.isSecureContext,
-  }
   const legalPanels = {
     terms: {
       eyebrow: 'Terms',
@@ -727,9 +720,7 @@ function App() {
       ? scanMode === 'certificate'
         ? certificateReadMethod === 'upload'
           ? 'アップロード画像を読み取る'
-          : certificateReadMethod === 'electronic'
-            ? '電子車検証を読み取る'
-            : '読み取り方法を選択'
+          : '車検証画像を選択'
         : scanMode === 'photo'
           ? '写真を追加へ進む'
           : '方法を選択'
@@ -823,55 +814,8 @@ function App() {
     }
   }
 
-  const startNfcScan = async () => {
-    if (!window.isSecureContext) {
-      setAnalysisMessage('電子車検証のNFC読み取りはHTTPS環境でのみ利用できます。HTTPSで開いてから実行してください。')
-      return
-    }
-    if (!window.NDEFReader) {
-      setAnalysisMessage('この端末/ブラウザはWeb NFCに未対応です。Android Chromeなど対応環境で確認してください。')
-      return
-    }
-
-    setNfcReading(true)
-    setAnalysisMessage('電子車検証の読み取り待機中です。スマホをカードに近づけてください。')
-
-    try {
-      const reader = new window.NDEFReader()
-      reader.addEventListener('reading', (event) => {
-        const decodedRecords = event.message.records
-          .map((record) => {
-            if (!record.data) return ''
-            const decoder = new TextDecoder(record.encoding || 'utf-8')
-            return decoder.decode(record.data)
-          })
-          .join('\n')
-        setDraftFields((current) => ({
-          ...current,
-          車名: current.車名 || '電子車検証読み取り車両',
-          型式: current.型式 || 'NFC-READ',
-          車検満了: current.車検満了 || '読み取り結果を確認',
-          車台番号: decodedRecords.slice(0, 24) || current.車台番号 || '読み取り済み',
-        }))
-        setAnalysisDone(true)
-        setNfcReading(false)
-        setAnalysisMessage('電子車検証のNFC読み取りが完了しました。内容を確認してください。')
-        setListingStep(1)
-      })
-      await reader.scan()
-    } catch {
-      setNfcReading(false)
-      setAnalysisMessage('NFC読み取りを開始できませんでした。端末のNFC設定とブラウザ権限を確認してください。')
-    }
-  }
-
   const runCertificateScan = async () => {
     setScanMode('certificate')
-    if (certificateReadMethod === 'electronic') {
-      await startNfcScan()
-      return
-    }
-
     if (!photoImages[3]) {
       setAnalysisMessage('車検証画像を撮影または選択してください。')
       return
@@ -1449,13 +1393,30 @@ function App() {
         <section className={`hero-band ${activeView !== 'home' ? 'hidden-section' : ''}`} id="search">
           <div>
             <p className="eyebrow">個人間中古車検索</p>
-            <h1>中古車を探す</h1>
+            <h1>個人出品の中古車を探す</h1>
             <p>メーカー、車種、地域、価格から条件に合う車をすぐに絞り込めます。</p>
+            <div className="hero-stats" aria-label="掲載状況">
+              <span>
+                掲載 <strong>{vehicles.length.toLocaleString('ja-JP')}</strong> 台
+              </span>
+              <span>
+                メーカー <strong>{catalogStats.makers}</strong>
+              </span>
+              <span>
+                車種 <strong>{catalogStats.models.toLocaleString('ja-JP')}</strong>
+              </span>
+            </div>
           </div>
-          <button className="market-chip" onClick={() => navigate('sell')} type="button">
-            <Camera size={18} />
-            写真で出品する
-          </button>
+          <div className="hero-actions">
+            <button className="market-chip" onClick={() => navigate('sell')} type="button">
+              <Camera size={18} />
+              写真で出品する
+            </button>
+            <button className="ghost-button" onClick={() => setShowFavoritesOnly(true)} type="button">
+              <Heart size={16} />
+              お気に入り
+            </button>
+          </div>
         </section>
 
         <section
@@ -1487,7 +1448,7 @@ function App() {
               <p className="eyebrow">出品ウィザード</p>
               <h2>{currentWizard.title}</h2>
               <p>{currentWizard.body}</p>
-              <div className="auth-card compact">
+              <div className={`auth-card compact ${currentUser ? 'logged-in' : ''}`}>
 	                {currentUser ? (
 	                  <>
 	                    <UserCheck size={18} />
@@ -1615,22 +1576,8 @@ function App() {
                         <Upload size={20} />
                         <span>写真をアップロード</span>
                         <small>車検証を撮影、またはアルバムから選択</small>
-                      </label>
-                      <label className={certificateReadMethod === 'electronic' ? 'selected' : ''}>
-                        <input
-                          type="radio"
-                          name="certificate-method"
-                          checked={certificateReadMethod === 'electronic'}
-                          onChange={() => {
-                            setCertificateReadMethod('electronic')
-                            setAnalysisMessage('スマホのNFC読み取りを想定した操作です。')
-                          }}
-                        />
-                        <FileScan size={20} />
-                        <span>電子車検証を読み取る</span>
-                        <small>{runtimeCapabilities.nfc ? 'この端末はWeb NFC候補あり' : 'Android Chrome + HTTPSで利用'}</small>
-                      </label>
-                    </div>
+	                      </label>
+	                    </div>
 
                     {certificateReadMethod === 'upload' && (
                       <label className="certificate-upload">
@@ -1645,19 +1592,7 @@ function App() {
                       </label>
                     )}
 
-                    {certificateReadMethod === 'electronic' && (
-                      <div className="electronic-reader">
-                        <Nfc size={28} />
-                        <h3>{nfcReading ? '読み取り待機中' : 'スマホを電子車検証に近づける'}</h3>
-                        <p>
-                          {runtimeCapabilities.secure
-                            ? '対応端末ではWeb NFCで読み取りを開始します。未対応端末では画像アップロードを使えます。'
-                            : 'NFC読み取りにはHTTPSが必要です。本番配信またはHTTPSローカル配信で利用できます。'}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="scan-result">
+	                    <div className="scan-result">
                       {scannedFields.map(([label]) => (
                         <label key={label}>
                           {label}
@@ -1812,6 +1747,11 @@ function App() {
             </div>
           </aside>
         </section>
+
+        <button className="floating-sell-button" onClick={() => navigate('sell')} type="button">
+          <Camera size={20} />
+          出品
+        </button>
 
         <section className={`content-grid ${activeView === 'home' ? 'single' : ''}`}>
           <div className={`main-column ${activeView === 'sell' ? 'hidden-section' : ''}`}>

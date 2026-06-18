@@ -78,6 +78,12 @@ export const aiOptions = [
   { label: 'シートヒーター', score: 82 },
   { label: '電動リアゲート', score: 76 },
   { label: '360度カメラ', score: 71 },
+  { label: '衝突被害軽減ブレーキ', score: 86 },
+  { label: 'レーンキープ', score: 79 },
+  { label: 'ブラインドスポットモニター', score: 73 },
+  { label: 'Apple CarPlay', score: 68 },
+  { label: 'ドラレコ', score: 66 },
+  { label: '禁煙車', score: 62 },
 ]
 
 export const initialChat: ChatMessage[] = [
@@ -124,8 +130,17 @@ export const photoSlots = [
 export const scannedFields = [
   ['車名', 'トヨタ ハリアー'],
   ['型式', 'MXUA80'],
+  ['グレード', 'Z レザーパッケージ'],
+  ['車台番号', 'MXUA80-0000000'],
   ['初度登録', '令和3年9月'],
   ['車検満了', '令和8年9月12日'],
   ['走行距離', '28,000km'],
   ['排気量', '1,980cc'],
+  ['燃料', 'ガソリン'],
+  ['駆動方式', '2WD'],
+  ['ミッション', 'CVT'],
+  ['用途', '乗用'],
+  ['自家用/事業用', '自家用'],
+  ['乗車定員', '5人'],
+  ['車両重量', '1,620kg'],
 ]
