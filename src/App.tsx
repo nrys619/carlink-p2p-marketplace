@@ -1331,16 +1331,26 @@ function App() {
           </section>
         )}
 
-        <header className={`topbar ${activeView === 'admin' ? 'admin-tools' : ''}`}>
-          <div className="search-box">
-            <Search size={19} />
-            <input
-              aria-label="車を検索"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="メーカー・車種・地域で検索"
-              value={query}
-            />
-          </div>
+        <header className={`topbar ${activeView === 'admin' ? 'admin-tools' : ''} ${activeView === 'sell' ? 'sell-tools' : ''}`}>
+          {activeView === 'sell' ? (
+            <div className="sell-context-bar">
+              <Camera size={19} />
+              <div>
+                <strong>出品専用画面</strong>
+                <span>{currentWizard.label} / AI読み取りから公開まで</span>
+              </div>
+            </div>
+          ) : (
+            <div className="search-box">
+              <Search size={19} />
+              <input
+                aria-label="車を検索"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="メーカー・車種・地域で検索"
+                value={query}
+              />
+            </div>
+          )}
           <button className="icon-button" type="button" aria-label="絞り込み">
             <SlidersHorizontal size={19} />
           </button>
@@ -1358,10 +1368,12 @@ function App() {
             <Bell size={18} />
             {unreadNotifications > 0 && <span>{unreadNotifications}</span>}
           </button>
-          <button className="primary-action" onClick={() => navigate('sell')} type="button">
-            <Camera size={18} />
-            出品する
-          </button>
+          {activeView !== 'sell' && (
+            <button className="primary-action" onClick={() => navigate('sell')} type="button">
+              <Camera size={18} />
+              出品する
+            </button>
+          )}
         </header>
 
         <div className={`sync-status ${serverSynced ? 'online' : ''}`}>
@@ -1407,15 +1419,24 @@ function App() {
               </span>
             </div>
           </div>
-          <div className="hero-actions">
-            <button className="market-chip" onClick={() => navigate('sell')} type="button">
-              <Camera size={18} />
-              写真で出品する
-            </button>
-            <button className="ghost-button" onClick={() => setShowFavoritesOnly(true)} type="button">
-              <Heart size={16} />
-              お気に入り
-            </button>
+          <button className="ghost-button" onClick={() => setShowFavoritesOnly(true)} type="button">
+            <Heart size={16} />
+            お気に入り
+          </button>
+        </section>
+
+        <section className={`sell-hero ${activeView !== 'sell' ? 'hidden-section' : ''}`}>
+          <div>
+            <p className="eyebrow">Sell Your Car</p>
+            <h1>出品する</h1>
+            <p>車検証画像と車の写真から、型式・装備・価格候補をAIで読み取って掲載を作ります。</p>
+          </div>
+          <div className="sell-hero-steps">
+            {listingSteps.map((step, index) => (
+              <span className={index <= listingStep ? 'active' : ''} key={step.label}>
+                {index + 1}. {step.label}
+              </span>
+            ))}
           </div>
         </section>
 
@@ -1748,10 +1769,12 @@ function App() {
           </aside>
         </section>
 
-        <button className="floating-sell-button" onClick={() => navigate('sell')} type="button">
-          <Camera size={20} />
-          出品
-        </button>
+        {activeView === 'home' && (
+          <button className="floating-sell-button" onClick={() => navigate('sell')} type="button">
+            <Camera size={20} />
+            出品
+          </button>
+        )}
 
         <section className={`content-grid ${activeView === 'home' ? 'single' : ''}`}>
           <div className={`main-column ${activeView === 'sell' ? 'hidden-section' : ''}`}>

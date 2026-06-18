@@ -164,6 +164,39 @@
   grid-template-columns: minmax(260px, 1fr) 44px 44px 44px 44px max-content;
 }
 
+.topbar.sell-tools {
+  grid-template-columns: minmax(260px, 1fr) 44px 44px;
+}
+
+.sell-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border: 1px solid #d7e2e0;
+  border-radius: 6px;
+  background: #f8fbfb;
+  padding: 0 14px;
+  color: #0f766e;
+}
+
+.sell-context-bar div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sell-context-bar strong {
+  color: #172036;
+  font-size: 14px;
+}
+
+.sell-context-bar span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .sync-status {
   display: inline-flex;
   align-items: center;
@@ -385,12 +418,6 @@
   cursor: pointer;
 }
 
-.hero-actions {
-  display: grid;
-  gap: 8px;
-  justify-items: stretch;
-}
-
 .floating-sell-button {
   position: fixed;
   right: max(18px, env(safe-area-inset-right));
@@ -410,6 +437,56 @@
   font: inherit;
   font-weight: 900;
   cursor: pointer;
+}
+
+.sell-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.85fr);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 14px;
+  border: 1px solid #d7e2e0;
+  border-radius: 6px;
+  padding: 22px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(16, 24, 40, 0.06);
+}
+
+.sell-hero h1 {
+  margin: 3px 0 6px;
+  color: #172036;
+  font-size: 30px;
+}
+
+.sell-hero p:not(.eyebrow) {
+  max-width: 680px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.sell-hero-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.sell-hero-steps span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: #667085;
+  background: #f3f6f8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sell-hero-steps span.active {
+  color: #0f5f59;
+  background: #e9f7f4;
 }
 
 .content-grid {
@@ -3074,9 +3151,23 @@
   }
 
   .hero-band,
-  .detail-strip {
+  .detail-strip,
+  .sell-hero {
     align-items: start;
     grid-template-columns: 1fr;
+  }
+
+  .sell-hero {
+    padding: 20px;
+  }
+
+  .sell-hero h1 {
+    font-size: 28px;
+    line-height: 1.18;
+  }
+
+  .sell-hero-steps {
+    justify-content: flex-start;
   }
 
   .hero-band {
